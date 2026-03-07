@@ -99,8 +99,8 @@ export function createRequestHandler(deps: HandlerDeps) {
       },
     });
 
-    // STEP 6: Interact with nav targets
-    for (const target of navTargets) {
+    // STEP 6: Interact with nav targets (max maxNavTargets, no goBack)
+    for (const target of navTargets.slice(0, config.maxNavTargets)) {
       if (isBlacklistedAction(target.description)) continue;
 
       try {
@@ -113,12 +113,14 @@ export function createRequestHandler(deps: HandlerDeps) {
           log.debug(`Selector too generic (${elementCount} matches): ${target.selector}`);
           continue;
         }
+
         const urlBefore = page.url();
         await page.locator(target.selector).click({ timeout: 3000 });
-        await page.waitForLoadState("networkidle", { timeout: 1500 }).catch(() => {});
+        await page.waitForTimeout(300); // short wait for DOM to settle
         const urlAfter = page.url();
 
         if (urlAfter !== urlBefore) {
+          // Navigation occurred — enqueue new URL and stop interactions for this page
           const normalized = normalizeUrl(urlAfter);
           if (
             new URL(urlAfter).origin === new URL(url).origin &&
@@ -128,8 +130,9 @@ export function createRequestHandler(deps: HandlerDeps) {
             discoveredUrls.set(normalized, "interaction");
             await context.addRequests([{ url: urlAfter }]);
           }
-          await page.goBack({ waitUntil: "networkidle" }).catch(() => {});
+          break; // stop — Crawlee will visit the new URL; no goBack needed
         } else {
+          // No navigation — scan for newly revealed links
           await enqueueLinks({
             strategy: "same-origin",
             transformRequestFunction: (req) => {
