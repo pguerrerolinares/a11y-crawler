@@ -1,6 +1,7 @@
 import { getDb } from "../db/client.ts";
 import { CreateAuditSchema, PaginationSchema } from "../types.ts";
 import type { AuditResponse } from "../types.ts";
+import { startCrawl } from "../jobs/manager.ts";
 
 export async function handleAudits(req: Request, url: URL): Promise<Response> {
   const method = req.method;
@@ -42,7 +43,7 @@ async function createAudit(req: Request): Promise<Response> {
     RETURNING id, url, status, created_at
   `;
 
-  // TODO: Task 11 — trigger job manager to spawn crawler
+  startCrawl(audit.id, auditUrl, config);
 
   return Response.json({
     id: audit.id,
