@@ -4,6 +4,8 @@ frontend/node_modules/
 *.json
 !package.json
 !tsconfig.json
+!tsconfig.*.json
+!components.json
 bun.lockb
 .env
 report*.json
