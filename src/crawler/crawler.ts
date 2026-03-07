@@ -1,22 +1,56 @@
+// src/crawler/crawler.ts
 import type { PlaywrightCrawlingContext } from "crawlee";
 import type { CrawlConfig } from "../types/config.ts";
 import type { PageResult } from "../types/page.ts";
 import type { Issue } from "../types/issue.ts";
 import type { LLMClient } from "../llm/client.ts";
+import type { PageScreenshots } from "../enrichment/prompts.ts";
 import { runAxe } from "../analyzer/axe.ts";
 import { buildRepresentation } from "../repr/tier.ts";
 import { discoverNavTargets } from "../discovery/nav.ts";
 import { enrichIssues } from "../enrichment/llm.ts";
 import { isBlacklistedAction, isBlacklistedUrl } from "./safety.ts";
+import type { Page } from "playwright";
 
 export interface HandlerDeps {
   config: CrawlConfig;
-  llmClient: LLMClient;
+  navClient: LLMClient;
+  enrichClient: LLMClient;
+  enrichVisualClient: LLMClient;
   discoveredUrls: Map<string, "link" | "sitemap" | "interaction">;
 }
 
+/**
+ * Capture full-page screenshots at 3 viewport widths.
+ * Restores original viewport after capture.
+ */
+export async function captureScreenshots(page: Page): Promise<PageScreenshots> {
+  const viewports = [
+    { width: 375, key: "mobile" as const },
+    { width: 768, key: "tablet" as const },
+    { width: 1280, key: "desktop" as const },
+  ];
+
+  const screenshots: Partial<PageScreenshots> = {};
+
+  for (const { width, key } of viewports) {
+    try {
+      await page.setViewportSize({ width, height: 900 });
+      const buf = await page.screenshot({ type: "png", fullPage: false });
+      screenshots[key] = buf.toString("base64");
+    } catch {
+      screenshots[key] = "";
+    }
+  }
+
+  // Restore desktop viewport
+  await page.setViewportSize({ width: 1280, height: 900 }).catch(() => {});
+
+  return screenshots as PageScreenshots;
+}
+
 export function createRequestHandler(deps: HandlerDeps) {
-  const { config, llmClient, discoveredUrls } = deps;
+  const { config, navClient, enrichClient, enrichVisualClient, discoveredUrls } = deps;
 
   return async function requestHandler(
     context: PlaywrightCrawlingContext,
@@ -27,11 +61,11 @@ export function createRequestHandler(deps: HandlerDeps) {
 
     log.info(`Processing: ${url}`);
 
-    // STEP 1: Navigate (already done by Crawlee, but ensure networkidle)
+    // STEP 1: Wait for networkidle
     try {
       await page.waitForLoadState("networkidle", { timeout: config.pageTimeout });
     } catch {
-      // Timeout waiting for networkidle is acceptable
+      // Timeout is acceptable
     }
 
     // STEP 2: Run axe-core FIRST (before any interactions)
@@ -42,16 +76,19 @@ export function createRequestHandler(deps: HandlerDeps) {
       log.warning(`axe-core failed on ${url}: ${err}`);
     }
 
-    // STEP 3: Build page representation
+    // STEP 3: Capture screenshots at 3 viewports (in-memory only)
+    const screenshots = await captureScreenshots(page);
+
+    // STEP 4: Build page representation
     const repr = await buildRepresentation(page);
     log.info(`Representation: ${repr.tier} (~${repr.tokenEstimate} tokens)`);
 
-    // STEP 4: LLM navigation discovery
+    // STEP 5: LLM navigation discovery
     const title = await page.title();
-    const navTargets = await discoverNavTargets(url, title, repr, llmClient);
+    const navTargets = await discoverNavTargets(url, title, repr, navClient);
     log.info(`Nav targets: ${navTargets.length}`);
 
-    // STEP 5: Standard link extraction
+    // STEP 6: Standard link extraction
     await enqueueLinks({
       strategy: "same-origin",
       transformRequestFunction: (req) => {
@@ -63,7 +100,7 @@ export function createRequestHandler(deps: HandlerDeps) {
       },
     });
 
-    // STEP 6: Interact with nav targets
+    // STEP 7: Interact with nav targets
     for (const target of navTargets) {
       if (isBlacklistedAction(target.description)) continue;
 
@@ -102,18 +139,23 @@ export function createRequestHandler(deps: HandlerDeps) {
       }
     }
 
-    // STEP 7: LLM-enrich critical/serious issues
+    // STEP 8: LLM-enrich critical/serious issues (per-violation, Málaga approach)
     const issuesToEnrich = axeIssues.filter((i) =>
       config.enrichImpactThreshold.includes(i.impact),
     );
     let enrichedIssues = axeIssues;
     if (issuesToEnrich.length > 0) {
-      const enriched = await enrichIssues(issuesToEnrich, llmClient);
+      const enriched = await enrichIssues(
+        issuesToEnrich,
+        screenshots,
+        enrichClient,
+        enrichVisualClient,
+      );
       const enrichedMap = new Map(enriched.map((i) => [i.id, i]));
       enrichedIssues = axeIssues.map((i) => enrichedMap.get(i.id) || i);
     }
 
-    // STEP 8: Build PageResult
+    // STEP 9: Build PageResult
     const groupedByRule: Record<string, Issue[]> = {};
     for (const issue of enrichedIssues) {
       if (!groupedByRule[issue.rule]) groupedByRule[issue.rule] = [];
