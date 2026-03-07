@@ -1,3 +1,4 @@
+// src/repr/tier.ts
 import type { Page } from "playwright";
 import type { PageRepresentation } from "../types/page.ts";
 import { getAriaSnapshot, countNavNodes } from "./aria.ts";
@@ -8,24 +9,40 @@ import { estimateTokens } from "../llm/client.ts";
 const MIN_NAV_NODES = 3;
 const MIN_PRUNED_HTML_LENGTH = 100;
 
+const TOKEN_BUDGETS = {
+  "aria-snapshot": 800,
+  "pruned-html": 5000,
+  "css-heuristic": 3000,
+} as const;
+
+/**
+ * Truncate content to a token budget. Appends [truncated] marker if cut.
+ */
+export function truncateToTokenBudget(content: string, maxTokens: number): string {
+  const maxChars = maxTokens * 4;
+  if (content.length <= maxChars) return content;
+  return content.slice(0, maxChars) + " [truncated]";
+}
+
 /**
  * Build the best page representation using tiered strategy.
- * Tries: ARIA snapshot -> Pruned HTML -> CSS heuristic
  */
 export async function buildRepresentation(page: Page): Promise<PageRepresentation> {
-  // Tier 1: ARIA snapshot
   const ariaYaml = await getAriaSnapshot(page);
   const prunedHtml = await getPrunedHtml(page);
 
   const selected = selectTier(ariaYaml, prunedHtml);
 
-  // If css-heuristic is needed, fetch elements from page
   if (selected.tier === "css-heuristic") {
-    const heuristicContent = await getHeuristicElements(page);
+    const raw = await getHeuristicElements(page);
+    const content = truncateToTokenBudget(
+      raw || "No interactive elements found",
+      TOKEN_BUDGETS["css-heuristic"],
+    );
     return {
       tier: "css-heuristic",
-      content: heuristicContent || "No interactive elements found",
-      tokenEstimate: estimateTokens(heuristicContent),
+      content,
+      tokenEstimate: estimateTokens(content),
       tierReason: "No landmarks found, using element enumeration",
     };
   }
@@ -35,33 +52,33 @@ export async function buildRepresentation(page: Page): Promise<PageRepresentatio
 
 /**
  * Select the best tier based on available content.
+ * Applies token budget truncation to selected content.
  * Pure function for easy testing.
  */
 export function selectTier(
   ariaYaml: string,
   prunedHtml: string,
 ): PageRepresentation {
-  // Tier 1: ARIA snapshot
   if (ariaYaml && countNavNodes(ariaYaml) >= MIN_NAV_NODES) {
+    const content = truncateToTokenBudget(ariaYaml, TOKEN_BUDGETS["aria-snapshot"]);
     return {
       tier: "aria-snapshot",
-      content: ariaYaml,
-      tokenEstimate: estimateTokens(ariaYaml),
+      content,
+      tokenEstimate: estimateTokens(content),
       tierReason: `ARIA snapshot contains ${countNavNodes(ariaYaml)} navigation nodes`,
     };
   }
 
-  // Tier 2: Pruned HTML
   if (prunedHtml.length >= MIN_PRUNED_HTML_LENGTH) {
+    const content = truncateToTokenBudget(prunedHtml, TOKEN_BUDGETS["pruned-html"]);
     return {
       tier: "pruned-html",
-      content: prunedHtml,
-      tokenEstimate: estimateTokens(prunedHtml),
+      content,
+      tokenEstimate: estimateTokens(content),
       tierReason: "ARIA snapshot insufficient, using pruned HTML from landmarks",
     };
   }
 
-  // Tier 3: placeholder - actual content fetched in buildRepresentation
   return {
     tier: "css-heuristic",
     content: "",
