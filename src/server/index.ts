@@ -36,7 +36,8 @@ Bun.serve({
       if (url.pathname.startsWith("/api/")) {
         const reqClone = req.clone();
         const response = await handleApiRoute(req, url);
-        logRequest(reqClone, response.status, Date.now() - start);
+        const responseClone = response.clone();
+        logRequest(reqClone, responseClone, Date.now() - start);
         return response;
       }
 
@@ -61,8 +62,9 @@ Bun.serve({
       return new Response("Not Found", { status: 404 });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logRequest(req, 500, Date.now() - start, message);
-      return Response.json({ error: "Internal Server Error" }, { status: 500 });
+      const errResponse = Response.json({ error: "Internal Server Error" }, { status: 500 });
+      logRequest(req, errResponse.clone(), Date.now() - start, message);
+      return errResponse;
     }
   },
 
