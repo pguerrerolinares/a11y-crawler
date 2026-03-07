@@ -5,6 +5,7 @@ import { logRequest } from "./middleware/logger.ts";
 import { handleAudits } from "./routes/audits.ts";
 import { handlePages } from "./routes/pages.ts";
 import { handleIssues } from "./routes/issues.ts";
+import { handleLogs } from "./routes/logs.ts";
 
 const env = validateEnv();
 
@@ -76,7 +77,7 @@ async function handleApiRoute(req: Request, url: URL): Promise<Response> {
     return handleAudits(req, url);
   }
   if (url.pathname === "/api/logs") {
-    // TODO: Task 7
+    return handleLogs(req, url);
   }
   return Response.json({ error: "Not Found" }, { status: 404 });
 }
