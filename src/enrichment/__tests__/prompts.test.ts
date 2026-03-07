@@ -30,7 +30,8 @@ describe("getSystemPrompt", () => {
   test("visual prompt specifies MANUAL_REVIEW for color-contrast", () => {
     const p = getSystemPrompt("visual");
     expect(p).toContain("color-contrast");
-    expect(p).toContain("MANUAL_REVIEW");
+    expect(p).toContain("MANUAL_REVIEW: Color contrast is a design/brand decision");
+    expect(p).toContain('"confidence":"low"');
   });
 
   test("media prompt contains alt text guidance", () => {

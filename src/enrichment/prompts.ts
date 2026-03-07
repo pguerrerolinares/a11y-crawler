@@ -50,7 +50,7 @@ Output (JSON only, no prose):
 
 Rules:
 - Fix ONLY the violation described. Do NOT alter layout, dimensions, or non-text colors
-- For color-contrast: adjust ONLY the foreground text color or background of the failing element. Minimum ratios: 4.5:1 normal text, 3:1 large text (≥18pt or ≥14pt bold) and UI components. Provide exact hex value
+- For color-contrast: see dedicated rule below
 - For target-size: minimum 24×24 CSS pixels (WCAG 2.2 AA); prefer 44×44px for touch
 - For meta-viewport: remove user-scalable=no and maximum-scale<5 entirely
 - screenshots provided: examine them to verify element visual context before choosing replacement color. Reference the viewport where the issue is most evident
