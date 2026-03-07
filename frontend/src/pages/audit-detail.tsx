@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, type PageResponse, type SharedIssueResponse } from "@/lib/api";
 import { ProgressView } from "@/components/progress-view";
 import { StatsCards } from "@/components/stats-cards";
 import { IssueTable } from "@/components/issue-table";
@@ -116,7 +116,7 @@ export default function AuditDetail() {
 
             <TabsContent value="pages" className="mt-4">
               <div className="space-y-2">
-                {pages?.data?.map((page: any) => (
+                {pages?.data?.map((page: PageResponse) => (
                   <Card key={page.id} className="hover:bg-muted/30 transition-colors">
                     <CardContent className="py-3 flex items-center justify-between">
                       <div className="min-w-0">
@@ -125,7 +125,7 @@ export default function AuditDetail() {
                       </div>
                       <Badge variant="secondary" className="shrink-0 ml-2 flex items-center gap-1">
                         <AlertTriangle className="h-3 w-3" />
-                        {page.issue_count ?? page.issueCount ?? 0}
+                        {page.issueCount ?? 0}
                       </Badge>
                     </CardContent>
                   </Card>
@@ -138,20 +138,20 @@ export default function AuditDetail() {
 
             <TabsContent value="shared" className="mt-4">
               <div className="grid gap-4 md:grid-cols-2">
-                {shared?.data?.map((issue: any, i: number) => (
+                {shared?.data?.map((issue: SharedIssueResponse, i: number) => (
                   <Card key={i}>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-mono">{issue.rule}</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2">
                       <p className="text-xs text-muted-foreground">
-                        Found on {issue.page_count ?? issue.pageCount} pages
+                        Found on {issue.pageCount} pages
                       </p>
-                      {issue.suggested_fix && (
-                        <p className="text-xs">{issue.suggested_fix}</p>
+                      {issue.suggestedFix && (
+                        <p className="text-xs">{issue.suggestedFix}</p>
                       )}
                       <div className="flex flex-wrap gap-1">
-                        {(issue.page_urls ?? issue.pageUrls ?? []).slice(0, 3).map((url: string, j: number) => (
+                        {(issue.pageUrls ?? []).slice(0, 3).map((url: string, j: number) => (
                           <Badge key={j} variant="secondary" className="text-[10px] truncate max-w-48">
                             {url}
                           </Badge>

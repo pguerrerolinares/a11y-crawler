@@ -1,5 +1,6 @@
 import { getDb } from "../db/client.ts";
 import { IssueFilterSchema } from "../types.ts";
+import type { IssueResponse } from "../types.ts";
 
 export async function handleIssues(req: Request, url: URL): Promise<Response> {
   if (req.method !== "GET") return Response.json({ error: "Method Not Allowed" }, { status: 405 });
@@ -56,11 +57,42 @@ async function listIssues(filterCol: "audit_id" | "page_id", filterVal: string, 
     values
   );
 
-  return Response.json({ data: issues, total, limit, offset });
+  return Response.json({ data: issues.map(mapIssueRow), total, limit, offset });
 }
 
 async function listSharedIssues(auditId: string): Promise<Response> {
   const db = getDb();
   const issues = await db`SELECT * FROM shared_issues WHERE audit_id = ${auditId} ORDER BY page_count DESC`;
-  return Response.json({ data: issues });
+  return Response.json({
+    data: issues.map((row: any) => ({
+      rule: row.rule,
+      impact: row.impact,
+      normalizedHtml: row.normalized_html,
+      pageCount: row.page_count,
+      pageUrls: row.page_urls,
+      suggestedFix: row.suggested_fix,
+    })),
+  });
+}
+
+function mapIssueRow(row: any): IssueResponse {
+  return {
+    id: row.id,
+    pageId: row.page_id,
+    auditId: row.audit_id,
+    rule: row.rule,
+    impact: row.impact,
+    description: row.description,
+    help: row.help,
+    helpUrl: row.help_url,
+    wcagTags: row.wcag_tags,
+    selector: row.selector,
+    html: row.html,
+    xpath: row.xpath,
+    checkSource: row.check_source,
+    category: row.category,
+    suggestedFix: row.suggested_fix,
+    fixConfidence: row.fix_confidence,
+    createdAt: row.created_at,
+  };
 }

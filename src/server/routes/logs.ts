@@ -39,5 +39,19 @@ export async function handleLogs(req: Request, url: URL): Promise<Response> {
     values
   );
 
-  return Response.json({ data: logs, total, limit, offset });
+  return Response.json({
+    data: logs.map((row: any) => ({
+      id: row.id,
+      method: row.method,
+      path: row.path,
+      statusCode: row.status_code,
+      durationMs: row.duration_ms,
+      body: row.body,
+      error: row.error,
+      createdAt: row.created_at,
+    })),
+    total,
+    limit,
+    offset,
+  });
 }

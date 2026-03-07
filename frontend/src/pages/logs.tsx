@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, type LogEntry } from "@/lib/api";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -72,10 +72,10 @@ export default function Logs() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.data.map((log: any) => (
+                {data.data.map((log: LogEntry) => (
                   <TableRow key={log.id}>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                      {new Date(log.created_at).toLocaleTimeString()}
+                      {new Date(log.createdAt).toLocaleTimeString()}
                     </TableCell>
                     <TableCell>
                       <Badge className={methodColors[log.method] ?? ""} variant="secondary">
@@ -84,11 +84,11 @@ export default function Logs() {
                     </TableCell>
                     <TableCell className="font-mono text-xs">{log.path}</TableCell>
                     <TableCell>
-                      <Badge className={statusColor(log.status_code)} variant="secondary">
-                        {log.status_code}
+                      <Badge className={statusColor(log.statusCode)} variant="secondary">
+                        {log.statusCode}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-xs">{log.duration_ms}ms</TableCell>
+                    <TableCell className="text-xs">{log.durationMs}ms</TableCell>
                   </TableRow>
                 ))}
                 {data.data.length === 0 && (

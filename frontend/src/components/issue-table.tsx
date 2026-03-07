@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, type IssueResponse } from "@/lib/api";
 
 const impactColors: Record<string, string> = {
   critical: "bg-red-500/15 text-red-700 dark:text-red-400",
@@ -85,7 +85,7 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.data.map((issue: any) => (
+                {data.data.map((issue: IssueResponse) => (
                   <Fragment key={issue.id}>
                     <TableRow
                       className="cursor-pointer hover:bg-muted/50"
@@ -99,7 +99,7 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-xs">{issue.category ?? "—"}</TableCell>
                       <TableCell className="hidden lg:table-cell text-xs max-w-xs truncate">
-                        {issue.suggested_fix ?? issue.suggestedFix ?? "—"}
+                        {issue.suggestedFix ?? "—"}
                       </TableCell>
                     </TableRow>
                     {expanded === issue.id && (
@@ -111,11 +111,11 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                             {issue.html && (
                               <pre className="bg-muted p-2 rounded overflow-x-auto text-[10px]">{issue.html}</pre>
                             )}
-                            {(issue.suggested_fix || issue.suggestedFix) && (
-                              <p><strong>Fix:</strong> {issue.suggested_fix ?? issue.suggestedFix}</p>
+                            {issue.suggestedFix && (
+                              <p><strong>Fix:</strong> {issue.suggestedFix}</p>
                             )}
-                            {issue.help_url && (
-                              <a href={issue.help_url} target="_blank" rel="noopener" className="text-blue-500 underline">
+                            {issue.helpUrl && (
+                              <a href={issue.helpUrl} target="_blank" rel="noopener" className="text-blue-500 underline">
                                 Learn more
                               </a>
                             )}
