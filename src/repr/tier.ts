@@ -19,9 +19,10 @@ const TOKEN_BUDGETS = {
  * Truncate content to a token budget. Appends [truncated] marker if cut.
  */
 export function truncateToTokenBudget(content: string, maxTokens: number): string {
+  const marker = " [truncated]";
   const maxChars = maxTokens * 4;
   if (content.length <= maxChars) return content;
-  return content.slice(0, maxChars) + " [truncated]";
+  return content.slice(0, maxChars - marker.length) + marker;
 }
 
 /**
