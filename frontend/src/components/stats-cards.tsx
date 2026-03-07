@@ -18,7 +18,7 @@ const impactConfig = [
 
 export function StatsCards({ summary }: StatsCardsProps) {
   return (
-    <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
+    <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-xs text-muted-foreground flex items-center gap-1">

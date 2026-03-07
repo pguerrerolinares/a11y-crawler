@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS issues (
   description     TEXT,
   help            TEXT,
   help_url        TEXT,
-  wcag_tags       TEXT[],
+  wcag_tags       JSONB,
   selector        TEXT,
   html            TEXT,
   xpath           TEXT,
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS shared_issues (
   impact          TEXT,
   normalized_html TEXT,
   page_count      INT,
-  page_urls       TEXT[],
+  page_urls       JSONB,
   suggested_fix   TEXT,
   category        TEXT
 );
