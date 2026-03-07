@@ -10,6 +10,17 @@ import { discoverSitemapUrls } from "./crawler/sitemap.ts";
 import { detectSharedIssues } from "./reporter/shared.ts";
 import { DEFAULT_CONFIG } from "./types/config.ts";
 
+function aggregateUsage(clients: LLMClient[]): { totalCalls: number; totalInputTokens: number; totalOutputTokens: number } {
+  return clients.reduce(
+    (acc, c) => ({
+      totalCalls: acc.totalCalls + c.usage.totalCalls,
+      totalInputTokens: acc.totalInputTokens + c.usage.totalInputTokens,
+      totalOutputTokens: acc.totalOutputTokens + c.usage.totalOutputTokens,
+    }),
+    { totalCalls: 0, totalInputTokens: 0, totalOutputTokens: 0 },
+  );
+}
+
 export async function audit(
   userConfig: Partial<CrawlConfig> & { baseUrl: string; apiKey: string },
 ): Promise<SiteReport> {
@@ -116,15 +127,8 @@ export async function audit(
     issuesByRule[issue.rule] = (issuesByRule[issue.rule] || 0) + 1;
   }
 
-  const totalInputTokens =
-    navClient.usage.totalInputTokens +
-    enrichClient.usage.totalInputTokens +
-    enrichVisualClient.usage.totalInputTokens;
-  const totalOutputTokens =
-    navClient.usage.totalOutputTokens +
-    enrichClient.usage.totalOutputTokens +
-    enrichVisualClient.usage.totalOutputTokens;
-  const estimatedCost = (totalInputTokens + totalOutputTokens) * 0.000001;
+  const usage = aggregateUsage([navClient, enrichClient, enrichVisualClient]);
+  const estimatedCost = (usage.totalInputTokens + usage.totalOutputTokens) * 0.000001;
 
   return {
     meta: {
@@ -173,12 +177,9 @@ export async function audit(
       urlsSkipped: discoveredUrls.size - pages.length,
     },
     llmUsage: {
-      totalCalls:
-        navClient.usage.totalCalls +
-        enrichClient.usage.totalCalls +
-        enrichVisualClient.usage.totalCalls,
-      totalInputTokens,
-      totalOutputTokens,
+      totalCalls: usage.totalCalls,
+      totalInputTokens: usage.totalInputTokens,
+      totalOutputTokens: usage.totalOutputTokens,
       estimatedCostUsd: Math.round(estimatedCost * 100) / 100,
       callsByPurpose: {
         navigation: navClient.usage.navigationCalls,
@@ -204,8 +205,7 @@ function printTokenSummary(
   const enrU = enrichClient.usage;
   const visU = enrichVisualClient.usage;
 
-  const totalIn = navU.totalInputTokens + enrU.totalInputTokens + visU.totalInputTokens;
-  const totalOut = navU.totalOutputTokens + enrU.totalOutputTokens + visU.totalOutputTokens;
+  const agg = aggregateUsage([navClient, enrichClient, enrichVisualClient]);
 
   console.log("\n=== LLM Usage ===");
   console.log(
@@ -219,6 +219,6 @@ function printTokenSummary(
   );
   console.log("─".repeat(75));
   console.log(
-    `Total: ${navU.totalCalls + enrU.totalCalls + visU.totalCalls} calls | ${fmt(totalIn)} in | ${fmt(totalOut)} out | ${cost(totalIn, totalOut)}`,
+    `Total: ${agg.totalCalls} calls | ${fmt(agg.totalInputTokens)} in | ${fmt(agg.totalOutputTokens)} out | ${cost(agg.totalInputTokens, agg.totalOutputTokens)}`,
   );
 }

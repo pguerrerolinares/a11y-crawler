@@ -60,13 +60,14 @@ export function selectTier(
   ariaYaml: string,
   prunedHtml: string,
 ): PageRepresentation {
-  if (ariaYaml && countNavNodes(ariaYaml) >= MIN_NAV_NODES) {
+  const navNodeCount = countNavNodes(ariaYaml);
+  if (ariaYaml && navNodeCount >= MIN_NAV_NODES) {
     const content = truncateToTokenBudget(ariaYaml, TOKEN_BUDGETS["aria-snapshot"]);
     return {
       tier: "aria-snapshot",
       content,
       tokenEstimate: estimateTokens(content),
-      tierReason: `ARIA snapshot contains ${countNavNodes(ariaYaml)} navigation nodes`,
+      tierReason: `ARIA snapshot contains ${navNodeCount} navigation nodes`,
     };
   }
 

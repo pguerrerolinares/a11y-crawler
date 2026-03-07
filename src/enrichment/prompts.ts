@@ -94,11 +94,14 @@ export function getSystemPrompt(category: ViolationCategory): string {
 /**
  * Strip noise from HTML fragment before sending to LLM.
  */
-export function cleanFragment(html: string): string {
-  return html
+export function cleanFragment(html: string, keepSvg = false): string {
+  let result = html
     .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<svg[\s\S]*?<\/svg>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "");
+  if (!keepSvg) {
+    result = result.replace(/<svg[\s\S]*?<\/svg>/gi, "");
+  }
+  return result
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -112,7 +115,7 @@ export function buildEnrichUserMessage(
   issue: Issue,
   screenshots?: PageScreenshots,
 ): OpenAI.ChatCompletionMessageParam {
-  const fragment = cleanFragment(issue.surroundingHtml || issue.html);
+  const fragment = cleanFragment(issue.surroundingHtml || issue.html, issue.violationCategory === "media");
 
   const text = `Page: ${issue.url}
 

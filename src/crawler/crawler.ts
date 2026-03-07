@@ -91,8 +91,9 @@ export function createRequestHandler(deps: HandlerDeps) {
       strategy: "same-origin",
       transformRequestFunction: (req) => {
         if (isBlacklistedUrl(req.url)) return false;
-        if (!discoveredUrls.has(normalizeUrl(req.url))) {
-          discoveredUrls.set(normalizeUrl(req.url), "link");
+        const norm = normalizeUrl(req.url);
+        if (!discoveredUrls.has(norm)) {
+          discoveredUrls.set(norm, "link");
         }
         return req;
       },
@@ -105,7 +106,7 @@ export function createRequestHandler(deps: HandlerDeps) {
       try {
         const urlBefore = page.url();
         await page.locator(target.selector).click({ timeout: 3000 });
-        await page.waitForTimeout(1500);
+        await page.waitForLoadState("networkidle", { timeout: 1500 }).catch(() => {});
         const urlAfter = page.url();
 
         if (urlAfter !== urlBefore) {
@@ -137,21 +138,17 @@ export function createRequestHandler(deps: HandlerDeps) {
       }
     }
 
-    // STEP 7: Capture screenshots at 3 viewports (in-memory only)
-    const screenshots = await captureScreenshots(page);
-
-    // STEP 8: LLM-enrich critical/serious issues (per-violation, Málaga approach)
+    // STEP 7: LLM-enrich critical/serious issues (per-violation, Málaga approach)
     const issuesToEnrich = axeIssues.filter((i) =>
       config.enrichImpactThreshold.includes(i.impact),
     );
     let enrichedIssues = axeIssues;
     if (issuesToEnrich.length > 0) {
-      const enriched = await enrichIssues(
-        issuesToEnrich,
-        screenshots,
-        enrichClient,
-        enrichVisualClient,
-      );
+      const hasVisual = issuesToEnrich.some((i) => i.violationCategory === "visual");
+      const screenshots = hasVisual
+        ? await captureScreenshots(page)
+        : { mobile: "", tablet: "", desktop: "" };
+      const enriched = await enrichIssues(issuesToEnrich, screenshots, enrichClient, enrichVisualClient);
       const enrichedMap = new Map(enriched.map((i) => [i.id, i]));
       enrichedIssues = axeIssues.map((i) => enrichedMap.get(i.id) || i);
     }
@@ -173,7 +170,7 @@ export function createRequestHandler(deps: HandlerDeps) {
       issues: enrichedIssues,
       groupedByRule,
       discoveredUrls: pageDiscoveredUrls,
-      discoveryMethods: Object.fromEntries(discoveredUrls),
+      discoveryMethods: {},
       representationTier: repr.tier,
       timestamp: new Date().toISOString(),
       processingMs: Date.now() - startTime,
