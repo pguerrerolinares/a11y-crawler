@@ -51,6 +51,19 @@ export async function enrichSingleIssue(
   screenshots: PageScreenshots,
   client: LLMClient,
 ): Promise<Issue> {
+  // color-contrast requires brand/design decision — hardcode MANUAL_REVIEW without LLM call
+  if (issue.rule === "color-contrast") {
+    return {
+      ...issue,
+      suggestedFix:
+        "MANUAL_REVIEW: Color contrast is a design/brand decision. " +
+        "Minimum required ratios: 4.5:1 for normal text, 3:1 for large text (>=18pt or >=14pt bold) and UI components.",
+      fixConfidence: "unvalidated, requires human review",
+      llmConfidence: "low",
+      wcagCriterion: "1.4.3",
+    };
+  }
+
   const systemPrompt = getSystemPrompt(issue.violationCategory);
   const userMessage = buildEnrichUserMessage(issue, screenshots);
 

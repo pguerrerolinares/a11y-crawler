@@ -73,7 +73,8 @@ export async function audit(
   const crawler = new PlaywrightCrawler({
     maxRequestsPerCrawl: config.maxPages,
     maxConcurrency: config.concurrency,
-    requestHandlerTimeoutSecs: (config.pageTimeout / 1000) * 3,
+    requestHandlerTimeoutSecs: (config.pageTimeout / 1000) * 8, // 240s — nav interactions + LLM calls
+    maxRequestRetries: 1, // reduce retry loops on timeout
     headless: true,
 
     async requestHandler(context) {
