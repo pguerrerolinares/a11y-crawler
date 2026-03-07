@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { QueryError } from "@/components/error-boundary";
 import { Trash2, ArrowLeft, Globe, Clock, AlertTriangle } from "lucide-react";
 
 export default function AuditDetail() {
@@ -16,7 +17,7 @@ export default function AuditDetail() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data: audit, isLoading } = useQuery({
+  const { data: audit, isLoading, error, refetch } = useQuery({
     queryKey: ["audit", id],
     queryFn: () => api.audits.get(id!),
     refetchInterval: (query) => {
@@ -47,6 +48,10 @@ export default function AuditDetail() {
 
   if (isLoading) {
     return <div className="space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-64" /></div>;
+  }
+
+  if (error) {
+    return <QueryError message={error.message} onRetry={() => refetch()} />;
   }
 
   if (!audit) {
