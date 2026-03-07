@@ -4,7 +4,7 @@ import type { CrawlConfig } from "./types/config.ts";
 import type { SiteReport, CrawlError } from "./types/report.ts";
 import type { PageResult } from "./types/page.ts";
 import type { ImpactLevel, ViolationCategory } from "./types/issue.ts";
-import { LLMClient } from "./llm/client.ts";
+import { LLMClient, COST_PER_TOKEN_USD } from "./llm/client.ts";
 import { createRequestHandler } from "./crawler/crawler.ts";
 import { discoverSitemapUrls } from "./crawler/sitemap.ts";
 import { detectSharedIssues } from "./reporter/shared.ts";
@@ -128,7 +128,7 @@ export async function audit(
   }
 
   const usage = aggregateUsage([navClient, enrichClient, enrichVisualClient]);
-  const estimatedCost = (usage.totalInputTokens + usage.totalOutputTokens) * 0.000001;
+  const estimatedCost = (usage.totalInputTokens + usage.totalOutputTokens) * COST_PER_TOKEN_USD;
 
   return {
     meta: {
@@ -199,7 +199,7 @@ function printTokenSummary(
 ): void {
   const fmt = (n: number) => n.toLocaleString();
   const cost = (inp: number, out: number) =>
-    `~$${((inp + out) * 0.000001).toFixed(3)}`;
+    `~$${((inp + out) * COST_PER_TOKEN_USD).toFixed(3)}`;
 
   const navU = navClient.usage;
   const enrU = enrichClient.usage;

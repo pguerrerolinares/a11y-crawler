@@ -1,7 +1,7 @@
 // src/enrichment/prompts.ts
 import type { Issue, ViolationCategory } from "../types/issue.ts";
 import type OpenAI from "openai";
-import { buildMultimodalMessage } from "../llm/client.ts";
+import { buildMultimodalMessage, extractJsonFromLlm } from "../llm/client.ts";
 
 export interface PageScreenshots {
   mobile: string;   // base64 PNG at 375px
@@ -147,22 +147,17 @@ ${fragment}
  * Parse LLM enrichment response JSON into EnrichResult.
  */
 export function parseEnrichResponse(content: string): EnrichResult | null {
-  try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
-    const parsed = JSON.parse(jsonMatch[0]);
-    if (!parsed.fix || typeof parsed.fix !== "string") return null;
-    const validConfidence = new Set(["high", "medium", "low"]);
-    const confidence = validConfidence.has(parsed.confidence)
-      ? (parsed.confidence as "high" | "medium" | "low")
-      : "low";
-    return {
-      fix: String(parsed.fix),
-      confidence,
-      wcag: String(parsed.wcag || ""),
-      contrastRatio: parsed.contrast_ratio ?? null,
-    };
-  } catch {
-    return null;
-  }
+  const parsed = extractJsonFromLlm(content) as Record<string, unknown> | null;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  if (!parsed.fix || typeof parsed.fix !== "string") return null;
+  const validConfidence = new Set(["high", "medium", "low"]);
+  const confidence = validConfidence.has(parsed.confidence as string)
+    ? (parsed.confidence as "high" | "medium" | "low")
+    : "low";
+  return {
+    fix: String(parsed.fix),
+    confidence,
+    wcag: String(parsed.wcag || ""),
+    contrastRatio: (parsed.contrast_ratio as string) ?? null,
+  };
 }

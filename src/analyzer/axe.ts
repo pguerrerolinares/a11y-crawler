@@ -45,6 +45,8 @@ export async function runAxe(
         checkSource: "axe" as const,
         suggestedFix: null,
         fixConfidence: null,
+        llmConfidence: null,
+        wcagCriterion: null,
         violationCategory: getViolationCategory(v.id),
       };
     }),

@@ -27,5 +27,9 @@ export interface Issue {
   checkSource: CheckSource;
   suggestedFix: string | null;
   fixConfidence: "unvalidated, requires human review" | null;
+  /** LLM-reported confidence for the suggestedFix ("high"|"medium"|"low"), null if not enriched */
+  llmConfidence: "high" | "medium" | "low" | null;
+  /** WCAG criterion cited by LLM for the fix (e.g. "1.4.3"), null if not enriched */
+  wcagCriterion: string | null;
   violationCategory: ViolationCategory;
 }

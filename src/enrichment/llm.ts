@@ -14,6 +14,8 @@ import {
  * Visual violations use enrichVisualClient (vision + reasoning).
  * All others use enrichClient.
  */
+const ENRICH_CONCURRENCY = 5;
+
 export async function enrichIssues(
   issues: Issue[],
   screenshots: PageScreenshots,
@@ -23,7 +25,6 @@ export async function enrichIssues(
   if (issues.length === 0) return issues;
 
   const results: Issue[] = [];
-  const ENRICH_CONCURRENCY = 5;
 
   for (let i = 0; i < issues.length; i += ENRICH_CONCURRENCY) {
     const batch = issues.slice(i, i + ENRICH_CONCURRENCY);
@@ -66,11 +67,11 @@ export async function enrichSingleIssue(
   const parsed = parseEnrichResponse(response.content);
   if (!parsed) return issue;
 
-  // NOTE: parsed.confidence, parsed.wcag, parsed.contrastRatio are available
-  // but not stored — Issue type only supports fixConfidence as a static label.
   return {
     ...issue,
     suggestedFix: parsed.fix,
     fixConfidence: "unvalidated, requires human review",
+    llmConfidence: parsed.confidence,
+    wcagCriterion: parsed.wcag || null,
   };
 }

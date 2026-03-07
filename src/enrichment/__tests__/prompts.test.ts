@@ -79,6 +79,8 @@ describe("buildEnrichUserMessage", () => {
     checkSource: "axe" as const,
     suggestedFix: null,
     fixConfidence: null,
+    llmConfidence: null,
+    wcagCriterion: null,
     violationCategory: "visual" as const,
   };
 

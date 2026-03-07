@@ -72,6 +72,8 @@ function makeIssue(rule: string, html: string) {
     checkSource: "axe" as const,
     suggestedFix: null,
     fixConfidence: null,
+    llmConfidence: null,
+    wcagCriterion: null,
     violationCategory: "media" as const,
   };
 }

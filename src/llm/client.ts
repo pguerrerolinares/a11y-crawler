@@ -133,6 +133,23 @@ export function estimateTokens(text: string): number {
 }
 
 /**
+ * Safely extract and parse JSON from LLM freeform text response.
+ * Tries to find a JSON object or array in the response.
+ */
+export function extractJsonFromLlm(text: string): unknown | null {
+  try {
+    const match = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+    if (!match) return null;
+    return JSON.parse(match[0]);
+  } catch {
+    return null;
+  }
+}
+
+/** Rough cost estimate per token in USD (all Kimi models, approximate) */
+export const COST_PER_TOKEN_USD = 0.000001;
+
+/**
  * Build a multimodal user message with text + base64 images.
  */
 export function buildMultimodalMessage(

@@ -1,5 +1,5 @@
 import type { PageRepresentation, NavTarget } from "../types/page.ts";
-import type { LLMClient } from "../llm/client.ts";
+import { type LLMClient, extractJsonFromLlm } from "../llm/client.ts";
 
 const NAV_SYSTEM_PROMPT = `You are a web navigation analyzer. Given a page representation, identify interactive elements that reveal additional navigation (menus, dropdowns, accordions, tab panels) or link to other sections of the same website.
 
@@ -53,31 +53,22 @@ export async function discoverNavTargets(
  * Parse LLM response into NavTarget array.
  */
 export function parseNavTargets(response: string): NavTarget[] {
-  try {
-    // Extract JSON array from response (may have surrounding text)
-    const jsonMatch = response.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return [];
-
-    const parsed = JSON.parse(jsonMatch[0]);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .filter(
-        (t: any) =>
-          t.selector &&
-          t.description &&
-          t.expectedBehavior &&
-          typeof t.confidence === "number" &&
-          t.confidence >= 0.5,
-      )
-      .slice(0, 10)
-      .map((t: any) => ({
-        selector: String(t.selector),
-        description: String(t.description),
-        expectedBehavior: t.expectedBehavior as NavTarget["expectedBehavior"],
-        confidence: Number(t.confidence),
-      }));
-  } catch {
-    return [];
-  }
+  const parsed = extractJsonFromLlm(response);
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter(
+      (t: any) =>
+        t.selector &&
+        t.description &&
+        t.expectedBehavior &&
+        typeof t.confidence === "number" &&
+        t.confidence >= 0.5,
+    )
+    .slice(0, 10)
+    .map((t: any) => ({
+      selector: String(t.selector),
+      description: String(t.description),
+      expectedBehavior: t.expectedBehavior as NavTarget["expectedBehavior"],
+      confidence: Number(t.confidence),
+    }));
 }
