@@ -6,20 +6,30 @@ import { handleAudits } from "./routes/audits.ts";
 import { handlePages } from "./routes/pages.ts";
 import { handleIssues } from "./routes/issues.ts";
 import { handleLogs } from "./routes/logs.ts";
+import { handleWsUpgrade, wsOpen, wsClose, wsMessage, startNotifyListener } from "./ws.ts";
 
 const env = validateEnv();
 
 await initDb();
 console.log("Database initialized");
 
+await startNotifyListener();
+
 const STATIC_ROOT = resolve(import.meta.dir, "../../dist/frontend");
 
 Bun.serve({
   port: env.PORT,
 
-  async fetch(req) {
+  async fetch(req, server) {
     const start = Date.now();
     const url = new URL(req.url);
+
+    // WebSocket upgrade
+    if (url.pathname.startsWith("/ws/")) {
+      const upgraded = handleWsUpgrade(req, server);
+      if (upgraded !== undefined) return upgraded;
+      return undefined as any;
+    }
 
     try {
       // API routes — clone request before consuming body for logging
@@ -57,9 +67,9 @@ Bun.serve({
   },
 
   websocket: {
-    open(ws) {},
-    message(ws, message) {},
-    close(ws) {},
+    open: wsOpen,
+    message: wsMessage,
+    close: wsClose,
   },
 });
 
