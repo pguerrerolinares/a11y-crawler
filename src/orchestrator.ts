@@ -2,6 +2,7 @@
 import { PlaywrightCrawler } from "crawlee";
 import type { CrawlConfig } from "./types/config.ts";
 import type { SiteReport, CrawlError } from "./types/report.ts";
+import type { ProgressCallback } from "./types/events.ts";
 import type { PageResult } from "./types/page.ts";
 import type { ImpactLevel, ViolationCategory } from "./types/issue.ts";
 import { LLMClient, COST_PER_TOKEN_USD } from "./llm/client.ts";
@@ -23,6 +24,7 @@ function aggregateUsage(clients: LLMClient[]): { totalCalls: number; totalInputT
 
 export async function audit(
   userConfig: Partial<CrawlConfig> & { baseUrl: string; apiKey: string },
+  onProgress?: ProgressCallback,
 ): Promise<SiteReport> {
   const config: CrawlConfig = { ...DEFAULT_CONFIG, ...userConfig };
   const startTime = Date.now();
@@ -84,6 +86,14 @@ export async function audit(
         console.log(
           `  [${pages.length}] ${result.url} - ${result.issues.length} issues (${result.representationTier})`,
         );
+        onProgress?.({
+          type: "page_analyzed",
+          data: { url: result.url, issueCount: result.issues.length, title: result.title },
+        });
+        onProgress?.({
+          type: "progress",
+          data: { pagesAnalyzed: pages.length, totalDiscovered: discoveredUrls.size, elapsedSeconds: Math.round((Date.now() - startTime) / 1000) },
+        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push({
@@ -92,6 +102,7 @@ export async function audit(
           message: msg,
           timestamp: new Date().toISOString(),
         });
+        onProgress?.({ type: "error", data: { url: context.request.url, message: msg } });
       }
     },
 
@@ -117,6 +128,8 @@ export async function audit(
 
   const allIssues = pages.flatMap((p) => p.issues);
   const totalDuration = Math.round((Date.now() - startTime) / 1000);
+
+  onProgress?.({ type: "completed", data: { totalPages: pages.length, totalIssues: allIssues.length } });
 
   const countByImpact = (level: ImpactLevel) =>
     allIssues.filter((i) => i.impact === level).length;
