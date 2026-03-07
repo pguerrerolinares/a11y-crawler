@@ -65,7 +65,9 @@ export async function startNotifyListener() {
           });
           lastSentId.set(auditId, event.id);
         }
-      } catch {}
+      } catch (err) {
+        console.error(`WS poll error for audit ${auditId}:`, err);
+      }
     }
     // Clean up tracking for disconnected audits
     for (const auditId of lastSentId.keys()) {

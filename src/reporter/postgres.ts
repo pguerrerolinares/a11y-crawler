@@ -41,7 +41,7 @@ async function writeReport(db: any, auditId: string, report: SiteReport): Promis
     await db`
       INSERT INTO shared_issues (audit_id, rule, impact, normalized_html, page_count, page_urls, suggested_fix)
       VALUES (
-        ${auditId}, ${shared.rule}, ${"serious"},
+        ${auditId}, ${shared.rule}, ${"serious"}, /* SharedIssue type lacks impact field */
         ${shared.html}, ${shared.pageCount}, ${shared.affectedPages},
         ${shared.suggestedFix}
       )
