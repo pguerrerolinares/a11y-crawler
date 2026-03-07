@@ -9,7 +9,7 @@ const NAV_PATTERNS = /\b(navigation|link|button|menuitem|menu|tab)\b/i;
 export function removeDialogs(ariaYaml: string): string {
   if (!ariaYaml) return "";
   // Match `- dialog ...` blocks at start of line (no indentation) and all indented lines that follow
-  const result = ariaYaml.replace(/^- dialog[^\n]*\n([ \t][^\n]*\n)*/gm, "");
+  const result = ariaYaml.replace(/^- (?:alert)?dialog[^\n]*(?:\n[ \t][^\n]*)*/gm, "");
   return result.replace(/\n{3,}/g, "\n\n").trim();
 }
 

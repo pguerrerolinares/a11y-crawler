@@ -64,4 +64,24 @@ describe("removeDialogs", () => {
   test("handles empty string", () => {
     expect(removeDialogs("")).toBe("");
   });
+
+  test("removes dialog at end of snapshot", () => {
+    const yaml = `- banner:\n  - link "Home"\n- dialog "Cookie":\n  - button "Accept"`;
+    const result = removeDialogs(yaml);
+    expect(result).not.toContain("dialog");
+    expect(result).not.toContain("Accept");
+    expect(result).toContain("banner");
+  });
+
+  test("returns empty when dialog is only content", () => {
+    const yaml = `- dialog "Cookie":\n  - button "Accept"`;
+    expect(removeDialogs(yaml)).toBe("");
+  });
+
+  test("removes alertdialog role", () => {
+    const yaml = `- alertdialog "Cookie":\n  - button "Accept"\n- banner:\n  - link "Home"`;
+    const result = removeDialogs(yaml);
+    expect(result).not.toContain("alertdialog");
+    expect(result).toContain("banner");
+  });
 });
