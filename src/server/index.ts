@@ -2,6 +2,9 @@ import { resolve } from "node:path";
 import { validateEnv } from "./env.ts";
 import { initDb } from "./db/client.ts";
 import { logRequest } from "./middleware/logger.ts";
+import { handleAudits } from "./routes/audits.ts";
+import { handlePages } from "./routes/pages.ts";
+import { handleIssues } from "./routes/issues.ts";
 
 const env = validateEnv();
 
@@ -60,6 +63,21 @@ Bun.serve({
 });
 
 async function handleApiRoute(req: Request, url: URL): Promise<Response> {
+  // Order matters: more specific patterns first
+  if (url.pathname.match(/^\/api\/audits\/[^/]+\/(pages|issues|shared)$/)) {
+    if (url.pathname.endsWith("/pages")) return handlePages(req, url);
+    return handleIssues(req, url);
+  }
+  if (url.pathname.startsWith("/api/pages/")) {
+    if (url.pathname.match(/\/issues$/)) return handleIssues(req, url);
+    return handlePages(req, url);
+  }
+  if (url.pathname.startsWith("/api/audits")) {
+    return handleAudits(req, url);
+  }
+  if (url.pathname === "/api/logs") {
+    // TODO: Task 7
+  }
   return Response.json({ error: "Not Found" }, { status: 404 });
 }
 
