@@ -49,4 +49,16 @@ describe("buildNavPrompt", () => {
     expect(prompt.user).toContain("aria-snapshot");
     expect(prompt.user).toContain("- navigation:");
   });
+
+  test("prompt specifies valid selector syntax rules", () => {
+    const prompt = buildNavPrompt("https://example.com", "Example", {
+      tier: "aria-snapshot",
+      content: "- navigation:\n  - link 'Home'",
+      tokenEstimate: 20,
+      tierReason: "test",
+    });
+    expect(prompt.system).toContain("a:has-text");
+    expect(prompt.system).toContain("button:has-text");
+    expect(prompt.system).not.toContain("link:has-text");
+  });
 });

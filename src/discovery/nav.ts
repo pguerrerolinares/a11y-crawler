@@ -10,10 +10,13 @@ Return ONLY a JSON array. Each object must have:
 - "confidence": 0.0 to 1.0
 
 Rules:
-- Do NOT include: search inputs, login/logout, cookie banners, external links
-- Focus on primary and secondary navigation patterns
-- Include hamburger/mobile menu toggles
-- Maximum 10 targets per page`;
+- Include: main nav, secondary nav, hamburger/mobile toggles, dropdown triggers, tab panels, accordion headers, breadcrumbs, skip-links
+- Exclude: search inputs, login/logout, cookie banners, social share buttons, external links, modals unrelated to navigation
+- Return ONLY a JSON array, no prose
+- Maximum 10 targets; omit targets with confidence < 0.5
+- VALID selectors: button, a, [role="button"], button:has-text('text'), a:has-text('text'), [aria-label="text"]
+- INVALID: never use "link:" prefix — it is not a valid selector. Use "a:" or [role="link"] instead
+- Prefer specific selectors over generic ones — avoid bare "button" or bare "a" without additional qualifier`;
 
 export function buildNavPrompt(
   url: string,
