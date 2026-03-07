@@ -43,6 +43,8 @@ export function broadcastToAudit(auditId: string, event: { type: string; data: u
   }
 }
 
+const lastSentId = new Map<string, number>();
+
 export async function startNotifyListener() {
   const db = getDb();
 
@@ -50,18 +52,24 @@ export async function startNotifyListener() {
   setInterval(async () => {
     for (const auditId of clients.keys()) {
       try {
+        const lastId = lastSentId.get(auditId) ?? 0;
         const events = await db`
           SELECT * FROM audit_events
-          WHERE audit_id = ${auditId}
-          ORDER BY id DESC LIMIT 1
+          WHERE audit_id = ${auditId} AND id > ${lastId}
+          ORDER BY id ASC
         `;
-        if (events.length > 0) {
+        for (const event of events) {
           broadcastToAudit(auditId, {
-            type: events[0].event_type,
-            data: events[0].data,
+            type: event.event_type,
+            data: event.data,
           });
+          lastSentId.set(auditId, event.id);
         }
       } catch {}
+    }
+    // Clean up tracking for disconnected audits
+    for (const auditId of lastSentId.keys()) {
+      if (!clients.has(auditId)) lastSentId.delete(auditId);
     }
   }, 1000);
 }

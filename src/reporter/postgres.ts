@@ -5,6 +5,12 @@ export async function writeReportToPostgres(
   auditId: string,
   report: SiteReport,
 ): Promise<void> {
+  await db.begin(async (tx: any) => {
+    await writeReport(tx, auditId, report);
+  });
+}
+
+async function writeReport(db: any, auditId: string, report: SiteReport): Promise<void> {
   for (const page of report.pages) {
     const issuesByImpact: Record<string, number> = {};
     for (const issue of page.issues) {
@@ -13,7 +19,7 @@ export async function writeReportToPostgres(
 
     const [insertedPage] = await db`
       INSERT INTO pages (audit_id, url, title, issue_count, issues_by_impact, duration_ms)
-      VALUES (${auditId}, ${page.url}, ${page.title}, ${page.issues.length}, ${JSON.stringify(issuesByImpact)}, ${page.processingMs})
+      VALUES (${auditId}, ${page.url}, ${page.title}, ${page.issues.length}, ${issuesByImpact}, ${page.processingMs})
       RETURNING id
     `;
 
@@ -46,9 +52,9 @@ export async function writeReportToPostgres(
     UPDATE audits SET
       status = 'completed',
       finished_at = NOW(),
-      summary = ${JSON.stringify(report.summary)},
-      discovery = ${JSON.stringify(report.discovery)},
-      llm_usage = ${JSON.stringify(report.llmUsage)}
+      summary = ${report.summary},
+      discovery = ${report.discovery},
+      llm_usage = ${report.llmUsage}
     WHERE id = ${auditId}
   `;
 }
