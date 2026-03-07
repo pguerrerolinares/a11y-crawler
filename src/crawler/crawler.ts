@@ -21,10 +21,11 @@ export interface HandlerDeps {
 }
 
 /**
- * Capture full-page screenshots at 3 viewport widths.
+ * Capture viewport screenshots at 3 widths.
  * Restores original viewport after capture.
  */
 export async function captureScreenshots(page: Page): Promise<PageScreenshots> {
+  const original = page.viewportSize() ?? { width: 1280, height: 900 };
   const viewports = [
     { width: 375, key: "mobile" as const },
     { width: 768, key: "tablet" as const },
@@ -35,7 +36,7 @@ export async function captureScreenshots(page: Page): Promise<PageScreenshots> {
 
   for (const { width, key } of viewports) {
     try {
-      await page.setViewportSize({ width, height: 900 });
+      await page.setViewportSize({ width, height: original.height });
       const buf = await page.screenshot({ type: "png", fullPage: false });
       screenshots[key] = buf.toString("base64");
     } catch {
@@ -43,8 +44,8 @@ export async function captureScreenshots(page: Page): Promise<PageScreenshots> {
     }
   }
 
-  // Restore desktop viewport
-  await page.setViewportSize({ width: 1280, height: 900 }).catch(() => {});
+  // Restore original viewport
+  await page.setViewportSize(original).catch(() => {});
 
   return screenshots as PageScreenshots;
 }
@@ -76,19 +77,16 @@ export function createRequestHandler(deps: HandlerDeps) {
       log.warning(`axe-core failed on ${url}: ${err}`);
     }
 
-    // STEP 3: Capture screenshots at 3 viewports (in-memory only)
-    const screenshots = await captureScreenshots(page);
-
-    // STEP 4: Build page representation
+    // STEP 3: Build page representation
     const repr = await buildRepresentation(page);
     log.info(`Representation: ${repr.tier} (~${repr.tokenEstimate} tokens)`);
 
-    // STEP 5: LLM navigation discovery
+    // STEP 4: LLM navigation discovery
     const title = await page.title();
     const navTargets = await discoverNavTargets(url, title, repr, navClient);
     log.info(`Nav targets: ${navTargets.length}`);
 
-    // STEP 6: Standard link extraction
+    // STEP 5: Standard link extraction
     await enqueueLinks({
       strategy: "same-origin",
       transformRequestFunction: (req) => {
@@ -100,7 +98,7 @@ export function createRequestHandler(deps: HandlerDeps) {
       },
     });
 
-    // STEP 7: Interact with nav targets
+    // STEP 6: Interact with nav targets
     for (const target of navTargets) {
       if (isBlacklistedAction(target.description)) continue;
 
@@ -138,6 +136,9 @@ export function createRequestHandler(deps: HandlerDeps) {
         log.debug(`Interaction failed: ${target.description}`);
       }
     }
+
+    // STEP 7: Capture screenshots at 3 viewports (in-memory only)
+    const screenshots = await captureScreenshots(page);
 
     // STEP 8: LLM-enrich critical/serious issues (per-violation, Málaga approach)
     const issuesToEnrich = axeIssues.filter((i) =>
