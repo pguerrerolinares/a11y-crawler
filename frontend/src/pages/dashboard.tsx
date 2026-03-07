@@ -2,11 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { AuditCard } from "@/components/audit-card";
 import { AuditFormDialog } from "@/components/audit-form";
+import { QueryError } from "@/components/error-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Shield } from "lucide-react";
 
 export default function Dashboard() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["audits"],
     queryFn: () => api.audits.list(),
   });
@@ -17,6 +18,8 @@ export default function Dashboard() {
         <h1 className="text-2xl font-bold">Audits</h1>
         <AuditFormDialog />
       </div>
+
+      {error && <QueryError message={error.message} onRetry={() => refetch()} />}
 
       {isLoading && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

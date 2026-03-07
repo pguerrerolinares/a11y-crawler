@@ -65,7 +65,7 @@ export function AuditFormDialog() {
         <Plus className="h-4 w-4 mr-2" />
         New Audit
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-sm:max-w-[100vw] max-sm:h-[100dvh] max-sm:rounded-none sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Start New Audit</DialogTitle>
         </DialogHeader>
