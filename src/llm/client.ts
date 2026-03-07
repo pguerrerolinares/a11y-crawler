@@ -131,3 +131,20 @@ export function estimateTokens(text: string): number {
   if (!text) return 0;
   return Math.ceil(text.length / 4);
 }
+
+/**
+ * Build a multimodal user message with text + base64 images.
+ */
+export function buildMultimodalMessage(
+  text: string,
+  images: string[], // base64 PNG strings
+): OpenAI.ChatCompletionMessageParam {
+  const content: OpenAI.ChatCompletionContentPart[] = [
+    { type: "text", text },
+    ...images.map((b64): OpenAI.ChatCompletionContentPart => ({
+      type: "image_url",
+      image_url: { url: `data:image/png;base64,${b64}` },
+    })),
+  ];
+  return { role: "user", content };
+}
