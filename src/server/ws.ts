@@ -14,7 +14,8 @@ const LOG_NOISE_PATHS = ["/api/logs", "/ws", "/health"];
 const LOG_NOISE_EXTENSIONS = [".js", ".css", ".svg", ".ico", ".png", ".jpg", ".woff", ".woff2"];
 
 function isNoisyLog(path: string): boolean {
-  if (LOG_NOISE_PATHS.some(p => path.startsWith(p))) return true;
+  // Exact matches for these paths (and their query string variants)
+  if (path === "/api/logs" || path.startsWith("/ws") || path === "/health") return true;
   if (LOG_NOISE_EXTENSIONS.some(ext => path.endsWith(ext))) return true;
   if (path.startsWith("/assets/")) return true;
   return false;
@@ -22,11 +23,16 @@ function isNoisyLog(path: string): boolean {
 
 export function broadcastLog(log: Record<string, unknown>) {
   if (logClients.size === 0) return;
-  const path = log.path as string;
+  const path = log.path;
+  if (typeof path !== "string") return;
   if (isNoisyLog(path)) return;
   const msg = JSON.stringify({ type: "new_log", data: log });
   for (const ws of logClients) {
-    ws.send(msg);
+    try {
+      ws.send(msg);
+    } catch {
+      logClients.delete(ws);
+    }
   }
 }
 
