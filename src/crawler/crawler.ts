@@ -104,6 +104,15 @@ export function createRequestHandler(deps: HandlerDeps) {
       if (isBlacklistedAction(target.description)) continue;
 
       try {
+        const elementCount = await page.locator(target.selector).count().catch(() => 0);
+        if (elementCount === 0) {
+          log.debug(`Selector not found: ${target.selector}`);
+          continue;
+        }
+        if (elementCount > 5) {
+          log.debug(`Selector too generic (${elementCount} matches): ${target.selector}`);
+          continue;
+        }
         const urlBefore = page.url();
         await page.locator(target.selector).click({ timeout: 3000 });
         await page.waitForLoadState("networkidle", { timeout: 1500 }).catch(() => {});
