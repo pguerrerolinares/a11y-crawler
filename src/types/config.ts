@@ -1,4 +1,4 @@
-// Re-export for convenience
+// src/types/config.ts
 import type { ImpactLevel } from "./issue.ts";
 
 export interface CrawlConfig {
@@ -6,8 +6,12 @@ export interface CrawlConfig {
   baseUrl: string;
   /** Moonshot API key */
   apiKey: string;
-  /** Moonshot model ID (default: "moonshot-v1-8k") */
-  model: string;
+  /** LLM model for navigation discovery (default: "kimi-k2-turbo-preview") */
+  navModel: string;
+  /** LLM model for issue enrichment, non-visual (default: "kimi-latest") */
+  enrichModel: string;
+  /** LLM model for visual issue enrichment (default: "kimi-k2.5") */
+  enrichVisualModel: string;
   /** Max pages to crawl (default: 100) */
   maxPages: number;
   /** Max crawl depth from seed (default: 5) */
@@ -26,12 +30,14 @@ export interface CrawlConfig {
   enrichImpactThreshold: ImpactLevel[];
   /** Moonshot API base URL (default: "https://api.moonshot.ai/v1") */
   apiBaseUrl: string;
-  /** Max LLM requests per minute (default: 10) */
+  /** Max LLM requests per minute per client (default: 10) */
   rateLimitRpm: number;
 }
 
 export const DEFAULT_CONFIG: Omit<CrawlConfig, "baseUrl" | "apiKey"> = {
-  model: "moonshot-v1-8k",
+  navModel: "kimi-k2-turbo-preview",
+  enrichModel: "kimi-latest",
+  enrichVisualModel: "kimi-k2.5",
   maxPages: 100,
   maxDepth: 5,
   concurrency: 3,
