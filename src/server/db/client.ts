@@ -12,9 +12,9 @@ export function getDb() {
 }
 
 export async function initDb() {
-  const db = getDb();
+  const conn = getDb();
   const schema = await Bun.file(
     new URL("./schema.sql", import.meta.url)
   ).text();
-  await db.unsafe(schema);
+  await conn.unsafe(schema);
 }
