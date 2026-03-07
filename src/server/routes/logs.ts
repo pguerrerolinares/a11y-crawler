@@ -51,7 +51,11 @@ export async function handleLogs(req: Request, url: URL): Promise<Response> {
   if (req.method !== "GET") return Response.json({ error: "Method Not Allowed" }, { status: 405 });
 
   const params = Object.fromEntries(url.searchParams);
-  const { limit, offset, path, method, status, ip, from, to, minDuration } = LogFilterSchema.parse(params);
+  const parsed = LogFilterSchema.safeParse(params);
+  if (!parsed.success) {
+    return Response.json({ error: "Validation failed", details: parsed.error.issues }, { status: 400 });
+  }
+  const { limit, offset, path, method, status, ip, from, to, minDuration } = parsed.data;
 
   const conditions: string[] = [];
   const values: any[] = [];
@@ -70,7 +74,7 @@ export async function handleLogs(req: Request, url: URL): Promise<Response> {
     paramIdx += methods.length;
   }
   if (status) {
-    if (status.endsWith("xx")) {
+    if (/^[1-5]xx$/.test(status)) {
       const base = parseInt(status[0], 10) * 100;
       conditions.push(`status_code >= $${paramIdx} AND status_code < $${paramIdx + 1}`);
       values.push(base, base + 100);

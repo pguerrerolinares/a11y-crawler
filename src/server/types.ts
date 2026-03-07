@@ -27,8 +27,8 @@ export const LogFilterSchema = PaginationSchema.extend({
   method: z.string().optional(),         // comma-separated: "GET,POST"
   status: z.string().optional(),         // exact "404" or range "4xx"
   ip: z.string().optional(),
-  from: z.string().optional(),           // ISO datetime
-  to: z.string().optional(),             // ISO datetime
+  from: z.string().datetime({ offset: true }).optional(),  // ISO datetime
+  to: z.string().datetime({ offset: true }).optional(),    // ISO datetime
   minDuration: z.coerce.number().optional(), // minimum ms
 });
 
