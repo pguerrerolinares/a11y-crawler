@@ -55,6 +55,7 @@ Rules:
 - For meta-viewport: remove user-scalable=no and maximum-scale<5 entirely
 - screenshots provided: examine them to verify element visual context before choosing replacement color. Reference the viewport where the issue is most evident
 - Compute contrast ratio from inline style values when possible
+- For color-contrast violations: return exactly {"fix":"MANUAL_REVIEW: Color contrast is a design/brand decision. Minimum required ratios: 4.5:1 for normal text, 3:1 for large text (>=18pt or >=14pt bold) and UI components.","confidence":"low","wcag":"1.4.3","contrast_ratio":null}
 
 Output (JSON only, no prose):
 {"fix":"<corrected HTML>","confidence":"high|medium|low","wcag":"<criterion e.g. 1.4.3>","contrast_ratio":"<computed or null>"}`,
