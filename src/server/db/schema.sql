@@ -77,6 +77,9 @@ CREATE TABLE IF NOT EXISTS request_logs (
   request_body  JSONB,
   response_size INT,
   error         TEXT,
+  response_body TEXT,
+  content_type  TEXT,
+  query_params  JSONB,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
