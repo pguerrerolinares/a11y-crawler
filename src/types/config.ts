@@ -32,6 +32,8 @@ export interface CrawlConfig {
   apiBaseUrl: string;
   /** Max LLM requests per minute per client (default: 10) */
   rateLimitRpm: number;
+  /** Max nav targets to interact with per page (default: 3) */
+  maxNavTargets: number;
 }
 
 export const DEFAULT_CONFIG: Omit<CrawlConfig, "baseUrl" | "apiKey"> = {
@@ -48,4 +50,5 @@ export const DEFAULT_CONFIG: Omit<CrawlConfig, "baseUrl" | "apiKey"> = {
   enrichImpactThreshold: ["critical", "serious"],
   apiBaseUrl: "https://api.moonshot.ai/v1",
   rateLimitRpm: 10,
+  maxNavTargets: 3,
 };
