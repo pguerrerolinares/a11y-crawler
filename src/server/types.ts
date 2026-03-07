@@ -24,8 +24,12 @@ export const IssueFilterSchema = PaginationSchema.extend({
 
 export const LogFilterSchema = PaginationSchema.extend({
   path: z.string().optional(),
-  status: z.coerce.number().optional(),
-  from: z.string().optional(),
+  method: z.string().optional(),         // comma-separated: "GET,POST"
+  status: z.string().optional(),         // exact "404" or range "4xx"
+  ip: z.string().optional(),
+  from: z.string().optional(),           // ISO datetime
+  to: z.string().optional(),             // ISO datetime
+  minDuration: z.coerce.number().optional(), // minimum ms
 });
 
 // Response types

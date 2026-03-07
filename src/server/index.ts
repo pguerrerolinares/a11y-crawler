@@ -89,7 +89,7 @@ async function handleApiRoute(req: Request, url: URL): Promise<Response> {
   if (url.pathname.startsWith("/api/audits")) {
     return handleAudits(req, url);
   }
-  if (url.pathname === "/api/logs") {
+  if (url.pathname === "/api/logs" || url.pathname.match(/^\/api\/logs\/\d+$/)) {
     return handleLogs(req, url);
   }
   return Response.json({ error: "Not Found" }, { status: 404 });
