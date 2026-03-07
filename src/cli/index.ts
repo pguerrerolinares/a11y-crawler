@@ -20,6 +20,7 @@ async function main() {
       concurrency: { type: "string", default: "3" },
       "no-sitemap": { type: "boolean", default: false },
       "no-enrich": { type: "boolean", default: false },
+      "max-nav-targets": { type: "string", default: "3" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -45,6 +46,7 @@ OPTIONS:
   --concurrency <n>             Parallel pages (default: 3)
   --no-sitemap                  Skip sitemap discovery
   --no-enrich                   Skip LLM fix suggestions
+  --max-nav-targets <n>         Max nav interactions per page (default: 3)
   --help, -h                    Show help
     `);
     process.exit(values.help ? 0 : 1);
@@ -76,6 +78,7 @@ OPTIONS:
     concurrency: parseInt(values.concurrency!, 10),
     skipSitemap: values["no-sitemap"]!,
     enrichImpactThreshold: values["no-enrich"] ? [] : ["critical", "serious"],
+    maxNavTargets: parseInt(values["max-nav-targets"]!, 10),
   });
 
   await writeReport(report, values.output!);
