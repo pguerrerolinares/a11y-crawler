@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -86,9 +86,8 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
               </TableHeader>
               <TableBody>
                 {data.data.map((issue: any) => (
-                  <>
+                  <Fragment key={issue.id}>
                     <TableRow
-                      key={issue.id}
                       className="cursor-pointer hover:bg-muted/50"
                       onClick={() => setExpanded(expanded === issue.id ? null : issue.id)}
                     >
@@ -124,7 +123,7 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                         </TableCell>
                       </TableRow>
                     )}
-                  </>
+                  </Fragment>
                 ))}
                 {data.data.length === 0 && (
                   <TableRow>
