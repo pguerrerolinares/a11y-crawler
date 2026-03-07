@@ -1,3 +1,4 @@
+// src/orchestrator.ts
 import { PlaywrightCrawler } from "crawlee";
 import type { CrawlConfig } from "./types/config.ts";
 import type { SiteReport, CrawlError } from "./types/report.ts";
@@ -18,12 +19,15 @@ export async function audit(
   const errors: CrawlError[] = [];
   const discoveredUrls = new Map<string, "link" | "sitemap" | "interaction">();
 
-  const llmClient = new LLMClient({
+  // Three specialized LLM clients
+  const clientBase = {
     apiKey: config.apiKey,
     baseUrl: config.apiBaseUrl,
-    model: config.model,
     rateLimitRpm: config.rateLimitRpm,
-  });
+  };
+  const navClient = new LLMClient({ ...clientBase, model: config.navModel });
+  const enrichClient = new LLMClient({ ...clientBase, model: config.enrichModel });
+  const enrichVisualClient = new LLMClient({ ...clientBase, model: config.enrichVisualModel });
 
   // Phase 1: Sitemap discovery
   const seedUrls: string[] = [config.baseUrl];
@@ -40,7 +44,6 @@ export async function audit(
         }
       } catch {}
     }
-    // Limit sitemap seeds
     if (seedUrls.length > config.maxPages / 2) {
       seedUrls.length = Math.ceil(config.maxPages / 2);
     }
@@ -48,12 +51,18 @@ export async function audit(
 
   // Phase 2: Crawl + Analyze
   console.log("\n=== Crawl + Analysis ===");
-  const handler = createRequestHandler({ config, llmClient, discoveredUrls });
+  const handler = createRequestHandler({
+    config,
+    navClient,
+    enrichClient,
+    enrichVisualClient,
+    discoveredUrls,
+  });
 
   const crawler = new PlaywrightCrawler({
     maxRequestsPerCrawl: config.maxPages,
     maxConcurrency: config.concurrency,
-    requestHandlerTimeoutSecs: config.pageTimeout / 1000 * 3,
+    requestHandlerTimeoutSecs: (config.pageTimeout / 1000) * 3,
     headless: true,
 
     async requestHandler(context) {
@@ -91,6 +100,9 @@ export async function audit(
   const sharedIssues = detectSharedIssues(pages);
   console.log(`Detected ${sharedIssues.length} shared issues`);
 
+  // Token usage summary
+  printTokenSummary(navClient, enrichClient, enrichVisualClient, config);
+
   const allIssues = pages.flatMap((p) => p.issues);
   const totalDuration = Math.round((Date.now() - startTime) / 1000);
 
@@ -104,9 +116,15 @@ export async function audit(
     issuesByRule[issue.rule] = (issuesByRule[issue.rule] || 0) + 1;
   }
 
-  const estimatedCost =
-    (llmClient.usage.totalInputTokens + llmClient.usage.totalOutputTokens) *
-    0.000001; // rough estimate
+  const totalInputTokens =
+    navClient.usage.totalInputTokens +
+    enrichClient.usage.totalInputTokens +
+    enrichVisualClient.usage.totalInputTokens;
+  const totalOutputTokens =
+    navClient.usage.totalOutputTokens +
+    enrichClient.usage.totalOutputTokens +
+    enrichVisualClient.usage.totalOutputTokens;
+  const estimatedCost = (totalInputTokens + totalOutputTokens) * 0.000001;
 
   return {
     meta: {
@@ -141,7 +159,9 @@ export async function audit(
       },
       pagesWithZeroIssues: pages.filter((p) => p.issues.length === 0).length,
       averageIssuesPerPage:
-        pages.length > 0 ? Math.round((allIssues.length / pages.length) * 100) / 100 : 0,
+        pages.length > 0
+          ? Math.round((allIssues.length / pages.length) * 100) / 100
+          : 0,
     },
     sharedIssues,
     discovery: {
@@ -153,15 +173,52 @@ export async function audit(
       urlsSkipped: discoveredUrls.size - pages.length,
     },
     llmUsage: {
-      totalCalls: llmClient.usage.totalCalls,
-      totalInputTokens: llmClient.usage.totalInputTokens,
-      totalOutputTokens: llmClient.usage.totalOutputTokens,
+      totalCalls:
+        navClient.usage.totalCalls +
+        enrichClient.usage.totalCalls +
+        enrichVisualClient.usage.totalCalls,
+      totalInputTokens,
+      totalOutputTokens,
       estimatedCostUsd: Math.round(estimatedCost * 100) / 100,
       callsByPurpose: {
-        navigation: llmClient.usage.navigationCalls,
-        enrichment: llmClient.usage.enrichmentCalls,
+        navigation: navClient.usage.navigationCalls,
+        enrichment:
+          enrichClient.usage.enrichmentCalls + enrichVisualClient.usage.enrichmentCalls,
       },
     },
     errors,
   };
+}
+
+function printTokenSummary(
+  navClient: LLMClient,
+  enrichClient: LLMClient,
+  enrichVisualClient: LLMClient,
+  config: CrawlConfig,
+): void {
+  const fmt = (n: number) => n.toLocaleString();
+  const cost = (inp: number, out: number) =>
+    `~$${((inp + out) * 0.000001).toFixed(3)}`;
+
+  const navU = navClient.usage;
+  const enrU = enrichClient.usage;
+  const visU = enrichVisualClient.usage;
+
+  const totalIn = navU.totalInputTokens + enrU.totalInputTokens + visU.totalInputTokens;
+  const totalOut = navU.totalOutputTokens + enrU.totalOutputTokens + visU.totalOutputTokens;
+
+  console.log("\n=== LLM Usage ===");
+  console.log(
+    `Nav discovery  (${config.navModel}): ${navU.totalCalls} calls | ${fmt(navU.totalInputTokens)} in | ${fmt(navU.totalOutputTokens)} out | ${cost(navU.totalInputTokens, navU.totalOutputTokens)}`,
+  );
+  console.log(
+    `Enrichment     (${config.enrichModel}): ${enrU.totalCalls} calls | ${fmt(enrU.totalInputTokens)} in | ${fmt(enrU.totalOutputTokens)} out | ${cost(enrU.totalInputTokens, enrU.totalOutputTokens)}`,
+  );
+  console.log(
+    `Enrichment vis (${config.enrichVisualModel}): ${visU.totalCalls} calls | ${fmt(visU.totalInputTokens)} in | ${fmt(visU.totalOutputTokens)} out | ${cost(visU.totalInputTokens, visU.totalOutputTokens)}`,
+  );
+  console.log("─".repeat(75));
+  console.log(
+    `Total: ${navU.totalCalls + enrU.totalCalls + visU.totalCalls} calls | ${fmt(totalIn)} in | ${fmt(totalOut)} out | ${cost(totalIn, totalOut)}`,
+  );
 }
