@@ -150,12 +150,16 @@ export default function AuditDetail() {
                       {issue.suggestedFix && (
                         <p className="text-xs">{issue.suggestedFix}</p>
                       )}
-                      <div className="flex flex-wrap gap-1">
-                        {(issue.pageUrls ?? []).slice(0, 3).map((url: string, j: number) => (
-                          <Badge key={j} variant="secondary" className="text-[10px] truncate max-w-48">
-                            {url}
-                          </Badge>
-                        ))}
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {(issue.pageUrls ?? []).slice(0, 3).map((url: string, j: number) => {
+                          let label: string;
+                          try { label = new URL(url).pathname || "/"; } catch { label = url; }
+                          return (
+                            <Badge key={j} variant="secondary" className="text-[10px] font-mono max-w-64 truncate">
+                              {label}
+                            </Badge>
+                          );
+                        })}
                       </div>
                     </CardContent>
                   </Card>
