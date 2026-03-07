@@ -39,7 +39,7 @@ async function createAudit(req: Request): Promise<Response> {
   const { url: auditUrl, ...config } = parsed.data;
 
   const [audit] = await db`
-    INSERT INTO audits (url, config) VALUES (${auditUrl}, ${JSON.stringify(config)})
+    INSERT INTO audits (url, config) VALUES (${auditUrl}, ${config})
     RETURNING id, url, status, created_at
   `;
 

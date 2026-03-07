@@ -6,6 +6,11 @@ import type { ProgressCallback } from "../types/events.ts";
 const auditId = process.argv[2];
 const configJson = process.argv[3];
 
+if (!auditId || !/^[0-9a-f-]{36}$/.test(auditId)) {
+  console.error("Invalid or missing audit ID (expected UUID)");
+  process.exit(1);
+}
+
 if (!auditId || !configJson) {
   console.error("Usage: bun run src/crawler/worker.ts <auditId> <configJson>");
   process.exit(1);
@@ -36,7 +41,7 @@ await db`UPDATE audits SET status = 'running', started_at = NOW() WHERE id = ${a
 const onProgress: ProgressCallback = async (event) => {
   await db`
     INSERT INTO audit_events (audit_id, event_type, data)
-    VALUES (${auditId}, ${event.type}, ${JSON.stringify(event.data)})
+    VALUES (${auditId}, ${event.type}, ${event.data})
   `;
   await db.unsafe(`NOTIFY audit_progress, '${auditId}'`);
 };
