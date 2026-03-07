@@ -24,7 +24,7 @@ export interface CrawlConfig {
   excludePatterns: string[];
   /** Only LLM-enrich issues at these impact levels (default: ["critical", "serious"]) */
   enrichImpactThreshold: ImpactLevel[];
-  /** Moonshot API base URL (default: "https://api.moonshot.cn/v1") */
+  /** Moonshot API base URL (default: "https://api.moonshot.ai/v1") */
   apiBaseUrl: string;
   /** Max LLM requests per minute (default: 10) */
   rateLimitRpm: number;
@@ -40,6 +40,6 @@ export const DEFAULT_CONFIG: Omit<CrawlConfig, "baseUrl" | "apiKey"> = {
   skipSitemap: false,
   excludePatterns: [],
   enrichImpactThreshold: ["critical", "serious"],
-  apiBaseUrl: "https://api.moonshot.cn/v1",
+  apiBaseUrl: "https://api.moonshot.ai/v1",
   rateLimitRpm: 10,
 };

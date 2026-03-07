@@ -12,7 +12,7 @@ async function main() {
       "max-pages": { type: "string", default: "100" },
       "max-depth": { type: "string", default: "5" },
       model: { type: "string", default: "moonshot-v1-8k" },
-      "api-base-url": { type: "string", default: "https://api.moonshot.cn/v1" },
+      "api-base-url": { type: "string", default: "https://api.moonshot.ai/v1" },
       wcag: { type: "string", default: "AA" },
       concurrency: { type: "string", default: "3" },
       "no-sitemap": { type: "boolean", default: false },
@@ -35,7 +35,7 @@ OPTIONS:
   --max-pages <n>          Max pages to discover (default: 100)
   --max-depth <n>          Max crawl depth (default: 5)
   --model <model>          LLM model (default: moonshot-v1-8k)
-  --api-base-url <url>     LLM API base URL (default: https://api.moonshot.cn/v1)
+  --api-base-url <url>     LLM API base URL (default: https://api.moonshot.ai/v1)
   --wcag <level>           WCAG level: A, AA, AAA (default: AA)
   --concurrency <n>        Parallel pages (default: 3)
   --no-sitemap             Skip sitemap discovery
