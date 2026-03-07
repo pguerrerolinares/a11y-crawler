@@ -1,11 +1,14 @@
 import { getDb } from "../db/client.ts";
 
-export async function logRequest(req: Request, status: number, durationMs: number, error?: string) {
+const MAX_RESPONSE_BODY = 2048;
+
+export async function logRequest(req: Request, response: Response, durationMs: number, error?: string) {
   const db = getDb();
   const url = new URL(req.url);
 
   if (!url.pathname.startsWith("/api/")) return;
 
+  // Parse request body for POST/PUT
   let requestBody = null;
   if (req.method === "POST" || req.method === "PUT") {
     try {
@@ -13,15 +16,37 @@ export async function logRequest(req: Request, status: number, durationMs: numbe
     } catch {}
   }
 
-  await db`INSERT INTO request_logs (method, path, status_code, duration_ms, ip, user_agent, request_body, error)
+  // Parse query params
+  const queryParams: Record<string, string> = {};
+  url.searchParams.forEach((value, key) => {
+    queryParams[key] = value;
+  });
+  const hasQueryParams = Object.keys(queryParams).length > 0;
+
+  // Capture response body (truncated) and metadata
+  const contentType = response.headers.get("content-type") || null;
+  let responseBody: string | null = null;
+  let responseSize: number | null = null;
+  try {
+    const cloned = response.clone();
+    const text = await cloned.text();
+    responseSize = text.length;
+    responseBody = text.length > MAX_RESPONSE_BODY ? text.slice(0, MAX_RESPONSE_BODY) : text;
+  } catch {}
+
+  await db`INSERT INTO request_logs (method, path, status_code, duration_ms, ip, user_agent, request_body, response_size, error, response_body, content_type, query_params)
     VALUES (
       ${req.method},
       ${url.pathname},
-      ${status},
+      ${response.status},
       ${durationMs},
       ${req.headers.get("x-forwarded-for") || "unknown"},
       ${req.headers.get("user-agent") || ""},
-      ${requestBody ? JSON.stringify(requestBody) : null},
-      ${error || null}
+      ${requestBody},
+      ${responseSize},
+      ${error || null},
+      ${responseBody},
+      ${contentType},
+      ${hasQueryParams ? queryParams : null}
     )`.catch(console.error);
 }
