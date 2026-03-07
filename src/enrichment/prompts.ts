@@ -149,9 +149,13 @@ export function parseEnrichResponse(content: string): EnrichResult | null {
     if (!jsonMatch) return null;
     const parsed = JSON.parse(jsonMatch[0]);
     if (!parsed.fix || typeof parsed.fix !== "string") return null;
+    const validConfidence = new Set(["high", "medium", "low"]);
+    const confidence = validConfidence.has(parsed.confidence)
+      ? (parsed.confidence as "high" | "medium" | "low")
+      : "low";
     return {
       fix: String(parsed.fix),
-      confidence: (parsed.confidence as "high" | "medium" | "low") || "low",
+      confidence,
       wcag: String(parsed.wcag || ""),
       contrastRatio: parsed.contrast_ratio ?? null,
     };
