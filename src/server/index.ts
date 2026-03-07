@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { validateEnv } from "./env.ts";
 import { initDb } from "./db/client.ts";
 import { logRequest } from "./middleware/logger.ts";
@@ -7,6 +8,8 @@ const env = validateEnv();
 await initDb();
 console.log("Database initialized");
 
+const STATIC_ROOT = resolve(import.meta.dir, "../../dist/frontend");
+
 Bun.serve({
   port: env.PORT,
 
@@ -15,22 +18,28 @@ Bun.serve({
     const url = new URL(req.url);
 
     try {
-      // API routes
+      // API routes — clone request before consuming body for logging
       if (url.pathname.startsWith("/api/")) {
+        const reqClone = req.clone();
         const response = await handleApiRoute(req, url);
-        logRequest(req, response.status, Date.now() - start);
+        logRequest(reqClone, response.status, Date.now() - start);
         return response;
       }
 
-      // Static files (frontend)
+      // Static files (frontend) — prevent path traversal
       const filePath = url.pathname === "/" ? "/index.html" : url.pathname;
-      const file = Bun.file(`${import.meta.dir}/../../dist/frontend${filePath}`);
+      const resolved = resolve(STATIC_ROOT, `.${filePath}`);
+      if (!resolved.startsWith(STATIC_ROOT)) {
+        return new Response("Forbidden", { status: 403 });
+      }
+
+      const file = Bun.file(resolved);
       if (await file.exists()) {
         return new Response(file);
       }
 
       // SPA fallback
-      const index = Bun.file(`${import.meta.dir}/../../dist/frontend/index.html`);
+      const index = Bun.file(resolve(STATIC_ROOT, "index.html"));
       if (await index.exists()) {
         return new Response(index, { headers: { "content-type": "text/html" } });
       }
