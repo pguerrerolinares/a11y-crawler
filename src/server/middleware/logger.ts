@@ -1,4 +1,5 @@
 import { getDb } from "../db/client.ts";
+import { broadcastLog } from "../ws.ts";
 
 const MAX_RESPONSE_BODY = 2048;
 
@@ -49,7 +50,7 @@ export async function logRequest(req: Request, response: Response, durationMs: n
     console.warn("[logger] parse failed:", (e as Error).message);
   }
 
-  await db`INSERT INTO request_logs (method, path, status_code, duration_ms, ip, user_agent, request_body, response_size, error, response_body, content_type, query_params)
+  db`INSERT INTO request_logs (method, path, status_code, duration_ms, ip, user_agent, request_body, response_size, error, response_body, content_type, query_params)
     VALUES (
       ${req.method},
       ${url.pathname},
@@ -63,5 +64,22 @@ export async function logRequest(req: Request, response: Response, durationMs: n
       ${responseBody},
       ${contentType},
       ${hasQueryParams ? queryParams : null}
-    )`.catch(console.error);
+    )
+    RETURNING id, created_at`
+    .then(([inserted]) => {
+      if (inserted) {
+        broadcastLog({
+          id: inserted.id,
+          method: req.method,
+          path: url.pathname,
+          statusCode: response.status,
+          durationMs,
+          ip: req.headers.get("x-forwarded-for") || "unknown",
+          responseSize,
+          contentType,
+          createdAt: inserted.created_at,
+        });
+      }
+    })
+    .catch(console.error);
 }
