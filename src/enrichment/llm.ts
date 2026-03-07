@@ -1,62 +1,68 @@
-import type { Issue, ViolationCategory } from "../types/issue.ts";
+// src/enrichment/llm.ts
+import type { Issue } from "../types/issue.ts";
 import type { LLMClient } from "../llm/client.ts";
-import { getPromptForCategory, parseFixes } from "./prompts.ts";
+import {
+  getSystemPrompt,
+  buildEnrichUserMessage,
+  parseEnrichResponse,
+  type PageScreenshots,
+} from "./prompts.ts";
 
 /**
  * Enrich issues with LLM-generated fix suggestions.
- * Groups by violation category, sends one prompt per category batch.
+ * One call per violation (Málaga approach).
+ * Visual violations use enrichVisualClient (vision + reasoning).
+ * All others use enrichClient.
  */
 export async function enrichIssues(
   issues: Issue[],
-  llmClient: LLMClient,
+  screenshots: PageScreenshots,
+  enrichClient: LLMClient,
+  enrichVisualClient: LLMClient,
 ): Promise<Issue[]> {
   if (issues.length === 0) return issues;
 
-  // Group by category
-  const byCategory = new Map<ViolationCategory, Issue[]>();
+  const results: Issue[] = [];
+
   for (const issue of issues) {
-    const existing = byCategory.get(issue.violationCategory) || [];
-    existing.push(issue);
-    byCategory.set(issue.violationCategory, existing);
-  }
-
-  const fixMap = new Map<string, string>();
-
-  for (const [category, categoryIssues] of byCategory) {
-    const systemPrompt = getPromptForCategory(category);
-    const userContent = categoryIssues
-      .map(
-        (issue) =>
-          `### Violation: ${issue.rule} (${issue.impact})\nID: ${issue.id}\nDescription: ${issue.description}\nCurrent HTML:\n\`\`\`html\n${issue.surroundingHtml || issue.html}\n\`\`\`\nSelector: ${issue.selector}`,
-      )
-      .join("\n\n");
-
-    const response = await llmClient.chat(
-      [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: `Page: ${categoryIssues[0].url}\n\n${userContent}` },
-      ],
-      "enrichment",
+    const enriched = await enrichSingleIssue(
+      issue,
+      screenshots,
+      issue.violationCategory === "visual" ? enrichVisualClient : enrichClient,
     );
-
-    if (response) {
-      const fixes = parseFixes(response.content);
-      for (const fix of fixes) {
-        fixMap.set(fix.issueId, fix.suggestedFix);
-      }
-    }
+    results.push(enriched);
   }
 
-  // Apply fixes back to issues
-  return issues.map((issue) => {
-    const fix = fixMap.get(issue.id);
-    if (fix) {
-      return {
-        ...issue,
-        suggestedFix: fix,
-        fixConfidence: "unvalidated, requires human review" as const,
-      };
-    }
-    return issue;
-  });
+  return results;
+}
+
+/**
+ * Enrich a single issue. Returns issue unchanged if LLM fails.
+ */
+export async function enrichSingleIssue(
+  issue: Issue,
+  screenshots: PageScreenshots,
+  client: LLMClient,
+): Promise<Issue> {
+  const systemPrompt = getSystemPrompt(issue.violationCategory);
+  const userMessage = buildEnrichUserMessage(issue, screenshots);
+
+  const response = await client.chat(
+    [
+      { role: "system", content: systemPrompt },
+      userMessage,
+    ],
+    "enrichment",
+  );
+
+  if (!response) return issue;
+
+  const parsed = parseEnrichResponse(response.content);
+  if (!parsed) return issue;
+
+  return {
+    ...issue,
+    suggestedFix: parsed.fix,
+    fixConfidence: "unvalidated, requires human review",
+  };
 }
