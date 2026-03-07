@@ -3,6 +3,18 @@ dist/
 *.json
 !package.json
 !tsconfig.json
+bun.lockb
 .env
 report*.json
 test-report*.json
+
+# Crawlee runtime storage
+storage/
+
+# Tool-generated files
+.omc/
+CLAUDE.md
+README.md
+
+# Root index.ts created by bun init (entry point is src/)
+index.ts
