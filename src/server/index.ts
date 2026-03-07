@@ -31,10 +31,11 @@ Bun.serve({
       return undefined as any;
     }
 
+    // Clone request before anything consumes the body
+    const reqClone = req.clone();
     try {
-      // API routes — clone request before consuming body for logging
+      // API routes
       if (url.pathname.startsWith("/api/")) {
-        const reqClone = req.clone();
         const response = await handleApiRoute(req, url);
         const responseClone = response.clone();
         logRequest(reqClone, responseClone, Date.now() - start);
@@ -63,7 +64,7 @@ Bun.serve({
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const errResponse = Response.json({ error: "Internal Server Error" }, { status: 500 });
-      logRequest(req, errResponse.clone(), Date.now() - start, message);
+      logRequest(reqClone, errResponse.clone(), Date.now() - start, message);
       return errResponse;
     }
   },
