@@ -30,9 +30,10 @@ async function listIssues(filterCol: "audit_id" | "page_id", filterVal: string, 
 
   if (impact) {
     const impacts = impact.split(",");
-    conditions.push(`impact = ANY($${paramIdx})`);
-    values.push(impacts);
-    paramIdx++;
+    const placeholders = impacts.map((_, i) => `$${paramIdx + i}`).join(", ");
+    conditions.push(`impact IN (${placeholders})`);
+    values.push(...impacts);
+    paramIdx += impacts.length;
   }
   if (rule) {
     conditions.push(`rule = $${paramIdx}`);
