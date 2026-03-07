@@ -69,7 +69,9 @@ export function parseNavTargets(response: string): NavTarget[] {
     )
     .slice(0, 10)
     .map((t: any) => ({
-      selector: String(t.selector),
+      selector: String(t.selector).startsWith("link:")
+        ? String(t.selector).replace(/^link:/, "a:")
+        : String(t.selector),
       description: String(t.description),
       expectedBehavior: t.expectedBehavior as NavTarget["expectedBehavior"],
       confidence: Number(t.confidence),

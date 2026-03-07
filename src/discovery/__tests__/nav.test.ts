@@ -25,6 +25,14 @@ describe("parseNavTargets", () => {
     expect(parseNavTargets(response)).toEqual([]);
   });
 
+  test("normalizes link: selectors to a:", () => {
+    const response = JSON.stringify([
+      { selector: "link:has-text('Home')", description: "Home link", expectedBehavior: "navigate", confidence: 0.9 }
+    ]);
+    const targets = parseNavTargets(response);
+    expect(targets[0].selector).toBe("a:has-text('Home')");
+  });
+
   test("limits to 10 targets max", () => {
     const targets = Array.from({ length: 15 }, (_, i) => ({
       selector: `a#link-${i}`,
