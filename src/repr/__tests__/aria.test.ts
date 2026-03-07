@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { countNavNodes } from "../aria.ts";
+import { countNavNodes, removeDialogs } from "../aria.ts";
 
 describe("countNavNodes", () => {
   test("counts navigation-related lines in ARIA YAML", () => {
@@ -22,5 +22,46 @@ describe("countNavNodes", () => {
   - link "Logo"
   - button "Menu"`;
     expect(countNavNodes(yaml)).toBe(2);
+  });
+});
+
+describe("removeDialogs", () => {
+  test("removes top-level dialog block", () => {
+    const yaml = `- dialog "Cookie consent":
+  - button "Accept"
+  - button "Reject"
+- banner:
+  - link "Home"
+  - button "Menu"`;
+    const result = removeDialogs(yaml);
+    expect(result).not.toContain("dialog");
+    expect(result).not.toContain("Cookie consent");
+    expect(result).toContain("banner");
+    expect(result).toContain("link");
+  });
+
+  test("keeps content when no dialog present", () => {
+    const yaml = `- banner:
+  - link "Home"
+  - button "Menu"
+- main:
+  - heading "Welcome"`;
+    expect(removeDialogs(yaml)).toBe(yaml);
+  });
+
+  test("removes multiple dialogs", () => {
+    const yaml = `- dialog "First":
+  - button "OK"
+- dialog "Second":
+  - button "Close"
+- banner:
+  - link "Home"`;
+    const result = removeDialogs(yaml);
+    expect(result).not.toContain("dialog");
+    expect(result).toContain("banner");
+  });
+
+  test("handles empty string", () => {
+    expect(removeDialogs("")).toBe("");
   });
 });
