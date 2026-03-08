@@ -28,11 +28,13 @@ export const LogFilterSchema = PaginationSchema.extend({
   status: z.string().refine(
     (v) => /^[1-5]xx$/.test(v) || /^\d{3}$/.test(v),
     { message: "status must be a 3-digit code or range like 2xx" }
-  ).optional(),         // exact "404" or range "4xx"
+  ).optional(),
   ip: z.string().optional(),
-  from: z.string().datetime({ offset: true }).optional(),  // ISO datetime
-  to: z.string().datetime({ offset: true }).optional(),    // ISO datetime
-  minDuration: z.coerce.number().optional(), // minimum ms
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  params: z.string().optional(),     // text search in query_params
+  reqBody: z.string().optional(),    // text search in request_body
+  resBody: z.string().optional(),    // text search in response_body
 });
 
 // Response types
