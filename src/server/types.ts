@@ -25,7 +25,10 @@ export const IssueFilterSchema = PaginationSchema.extend({
 export const LogFilterSchema = PaginationSchema.extend({
   path: z.string().optional(),
   method: z.string().optional(),         // comma-separated: "GET,POST"
-  status: z.string().optional(),         // exact "404" or range "4xx"
+  status: z.string().refine(
+    (v) => /^[1-5]xx$/.test(v) || /^\d{3}$/.test(v),
+    { message: "status must be a 3-digit code or range like 2xx" }
+  ).optional(),         // exact "404" or range "4xx"
   ip: z.string().optional(),
   from: z.string().datetime({ offset: true }).optional(),  // ISO datetime
   to: z.string().datetime({ offset: true }).optional(),    // ISO datetime
