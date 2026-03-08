@@ -1,5 +1,4 @@
 import { getDb } from "../db/client.ts";
-import { broadcastLog } from "../ws.ts";
 
 const MAX_RESPONSE_BODY = 2048;
 
@@ -14,15 +13,20 @@ function sanitize(obj: unknown): unknown {
   return result;
 }
 
+function isNoisyPath(pathname: string): boolean {
+  return pathname.startsWith("/api/logs") || pathname === "/health";
+}
+
 export async function logRequest(req: Request, response: Response, durationMs: number, error?: string) {
   const db = getDb();
   const url = new URL(req.url);
 
   if (!url.pathname.startsWith("/api/")) return;
+  if (isNoisyPath(url.pathname)) return;
 
-  // Parse request body for POST/PUT
+  // Parse request body for POST/PUT/PATCH
   let requestBody = null;
-  if (req.method === "POST" || req.method === "PUT") {
+  if (req.method === "POST" || req.method === "PUT" || req.method === "PATCH") {
     try {
       requestBody = sanitize(await req.clone().json());
     } catch (e) {
@@ -56,7 +60,7 @@ export async function logRequest(req: Request, response: Response, durationMs: n
       ${url.pathname},
       ${response.status},
       ${durationMs},
-      ${req.headers.get("x-forwarded-for") || "unknown"},
+      ${req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown"},
       ${req.headers.get("user-agent") || ""},
       ${requestBody},
       ${responseSize},
@@ -66,20 +70,5 @@ export async function logRequest(req: Request, response: Response, durationMs: n
       ${hasQueryParams ? queryParams : null}
     )
     RETURNING id, created_at`
-    .then(([inserted]) => {
-      if (inserted) {
-        broadcastLog({
-          id: inserted.id,
-          method: req.method,
-          path: url.pathname,
-          statusCode: response.status,
-          durationMs,
-          ip: req.headers.get("x-forwarded-for") || "unknown",
-          responseSize,
-          contentType,
-          createdAt: inserted.created_at,
-        });
-      }
-    })
     .catch(console.error);
 }
