@@ -74,6 +74,9 @@ export interface LogEntry {
   responseSize: number | null;
   contentType: string | null;
   createdAt: string;
+  hasQueryParams: boolean;
+  hasRequestBody: boolean;
+  hasResponseBody: boolean;
 }
 
 export interface LogDetail extends LogEntry {
