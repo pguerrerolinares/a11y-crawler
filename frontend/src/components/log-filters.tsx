@@ -51,7 +51,10 @@ export function LogFilterBar({ filters, onChange, onRefresh }: LogFilterBarProps
             key={m}
             variant={filters.method.includes(m) ? "default" : "outline"}
             className="cursor-pointer select-none"
+            role="button"
+            tabIndex={0}
             onClick={() => toggleMethod(m)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleMethod(m); } }}
           >
             {m}
           </Badge>
