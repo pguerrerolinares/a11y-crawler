@@ -1,8 +1,11 @@
 node_modules/
 dist/
+frontend/node_modules/
 *.json
 !package.json
 !tsconfig.json
+!tsconfig.*.json
+!components.json
 bun.lockb
 .env
 report*.json
@@ -17,4 +20,4 @@ CLAUDE.md
 README.md
 
 # Root index.ts created by bun init (entry point is src/)
-index.ts
+/index.ts

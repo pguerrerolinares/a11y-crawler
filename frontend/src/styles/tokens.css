@@ -1,0 +1,22 @@
+:root {
+  /* Impact colors */
+  --color-critical: oklch(0.55 0.22 27);
+  --color-serious: oklch(0.60 0.18 45);
+  --color-moderate: oklch(0.68 0.15 85);
+  --color-minor: oklch(0.55 0.18 260);
+  --color-success: oklch(0.55 0.18 145);
+
+  /* Status colors */
+  --color-pending: oklch(0.55 0 0);
+  --color-running: oklch(0.55 0.18 260);
+  --color-completed: oklch(0.55 0.18 145);
+  --color-failed: oklch(0.55 0.22 27);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
