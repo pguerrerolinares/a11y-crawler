@@ -18,10 +18,10 @@ function statusColor(code: number) {
 }
 
 function formatBytes(bytes: number | null): string {
-  if (bytes === null || bytes === 0) return "0 B";
+  if (bytes === null || bytes <= 0) return "0 B";
   const k = 1024;
-  const sizes = ["B", "KB", "MB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
@@ -100,7 +100,7 @@ export function LogDetailModal({ logId, onClose }: LogDetailModalProps) {
                     {Object.entries(log.queryParams).map(([k, v]) => (
                       <div key={k} className="flex gap-2 text-xs">
                         <span className="font-mono font-medium">{k}:</span>
-                        <span className="font-mono text-muted-foreground">{v}</span>
+                        <span className="font-mono text-muted-foreground">{String(v)}</span>
                       </div>
                     ))}
                   </div>
