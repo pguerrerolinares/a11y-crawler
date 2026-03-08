@@ -65,12 +65,23 @@ export interface PaginatedResponse<T> {
 }
 
 export interface LogEntry {
-  id: string;
+  id: number;
   method: string;
   path: string;
   statusCode: number;
   durationMs: number;
+  ip: string;
+  responseSize: number | null;
+  contentType: string | null;
   createdAt: string;
+}
+
+export interface LogDetail extends LogEntry {
+  userAgent: string | null;
+  requestBody: Record<string, unknown> | null;
+  responseBody: string | null;
+  queryParams: Record<string, string> | null;
+  error: string | null;
 }
 
 const BASE = "/api";
@@ -106,5 +117,6 @@ export const api = {
   },
   logs: {
     list: (params?: string) => request<PaginatedResponse<LogEntry>>(`/logs${params ? `?${params}` : ""}`),
+    get: (id: number) => request<LogDetail>(`/logs/${id}`),
   },
 };
