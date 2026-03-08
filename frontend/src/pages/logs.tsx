@@ -57,7 +57,7 @@ export default function Logs() {
   // Clear live buffer when API data refreshes to avoid stale duplicates
   useEffect(() => {
     if (data) clearLive();
-  }, [data]);
+  }, [data, clearLive]);
 
   // Merge live logs at top only on first page with no active filters
   const displayLogs = useMemo(() => {

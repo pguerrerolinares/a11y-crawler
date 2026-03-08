@@ -9,13 +9,11 @@ interface WsData {
 const clients = new Map<string, Set<ServerWebSocket<WsData>>>();
 const logClients = new Set<ServerWebSocket<WsData>>();
 
-// Paths to exclude from live log streaming (noise filter)
-const LOG_NOISE_PATHS = ["/api/logs", "/ws", "/health"];
 const LOG_NOISE_EXTENSIONS = [".js", ".css", ".svg", ".ico", ".png", ".jpg", ".woff", ".woff2"];
 
 function isNoisyLog(path: string): boolean {
-  // Exact matches for these paths (and their query string variants)
-  if (path === "/api/logs" || path.startsWith("/ws") || path === "/health") return true;
+  // Prefix-match for /api/logs (covers list and detail), /ws, /health
+  if (path.startsWith("/api/logs") || path.startsWith("/ws") || path === "/health") return true;
   if (LOG_NOISE_EXTENSIONS.some(ext => path.endsWith(ext))) return true;
   if (path.startsWith("/assets/")) return true;
   return false;
