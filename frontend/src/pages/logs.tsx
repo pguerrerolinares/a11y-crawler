@@ -208,7 +208,7 @@ export default function Logs() {
       )}
 
       {selection !== null && (
-        <LogDetailModal logId={selection.id} initialTab={selection.initialTab} onClose={handleCloseModal} />
+        <LogDetailModal key={`${selection.id}-${selection.initialTab}`} logId={selection.id} initialTab={selection.initialTab} onClose={handleCloseModal} />
       )}
     </div>
   );
