@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, type LogDetail } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
