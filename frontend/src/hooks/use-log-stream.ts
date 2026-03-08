@@ -7,7 +7,7 @@ export function useLogStream() {
   const [liveLogs, setLiveLogs] = useState<LogEntry[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const connect = useCallback(() => {
     if (
@@ -28,7 +28,7 @@ export function useLogStream() {
           setLiveLogs(prev => [msg.data as LogEntry, ...prev].slice(0, 100));
         }
       } catch (err) {
-        if (process.env.NODE_ENV !== "production") {
+        if (import.meta.env.DEV) {
           console.warn("[useLogStream] Failed to parse WS message:", err);
         }
       }
