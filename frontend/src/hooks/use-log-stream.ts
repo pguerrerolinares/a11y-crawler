@@ -3,11 +3,26 @@ import type { LogEntry } from "@/lib/api";
 
 type ConnectionStatus = "connected" | "disconnected" | "connecting";
 
-export function useLogStream() {
+export function useLogStream(paused = false) {
   const [liveLogs, setLiveLogs] = useState<LogEntry[]>([]);
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const bufferRef = useRef<LogEntry[]>([]);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+
+  // Flush buffered WS messages at most twice per second to avoid continuous re-renders.
+  // Skip flush while paused (e.g. detail modal is open) to prevent re-rendering the table.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (pausedRef.current || bufferRef.current.length === 0) return;
+      const pending = bufferRef.current;
+      bufferRef.current = [];
+      setLiveLogs(prev => [...pending, ...prev].slice(0, 100));
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
 
   const connect = useCallback(() => {
     if (
@@ -25,7 +40,7 @@ export function useLogStream() {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === "new_log" && msg.data) {
-          setLiveLogs(prev => [msg.data as LogEntry, ...prev].slice(0, 100));
+          bufferRef.current = [msg.data as LogEntry, ...bufferRef.current];
         }
       } catch (err) {
         if (import.meta.env.DEV) {
