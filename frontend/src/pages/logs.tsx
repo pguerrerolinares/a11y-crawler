@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type LogEntry } from "@/lib/api";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { LogFilterBar, type LogFilters, emptyFilters } from "@/components/log-filters";
 import { LogDetailModal } from "@/components/log-detail-modal";
 import { useLogStream } from "@/hooks/use-log-stream";
+import { statusColor, formatBytes } from "@/lib/format";
 
 const methodColors: Record<string, string> = {
   GET: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
@@ -18,21 +19,6 @@ const methodColors: Record<string, string> = {
   PATCH: "bg-purple-500/15 text-purple-700 dark:text-purple-400",
 };
 
-function statusColor(code: number) {
-  if (code < 300) return "bg-green-500/15 text-green-700 dark:text-green-400";
-  if (code < 400) return "bg-blue-500/15 text-blue-700 dark:text-blue-400";
-  if (code < 500) return "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400";
-  return "bg-red-500/15 text-red-700 dark:text-red-400";
-}
-
-function formatBytes(bytes: number | null): string {
-  if (bytes === null || bytes <= 0) return "—";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
-
 function buildParams(filters: LogFilters, limit: number, offset: number): string {
   const p = new URLSearchParams();
   p.set("limit", String(limit));
@@ -41,8 +27,14 @@ function buildParams(filters: LogFilters, limit: number, offset: number): string
   if (filters.path) p.set("path", filters.path);
   if (filters.status) p.set("status", filters.status);
   if (filters.ip) p.set("ip", filters.ip);
-  if (filters.from) p.set("from", new Date(filters.from).toISOString());
-  if (filters.to) p.set("to", new Date(filters.to).toISOString());
+  if (filters.from) {
+    const d = new Date(filters.from);
+    if (!isNaN(d.getTime())) p.set("from", d.toISOString());
+  }
+  if (filters.to) {
+    const d = new Date(filters.to);
+    if (!isNaN(d.getTime())) p.set("to", d.toISOString());
+  }
   if (filters.minDuration) p.set("minDuration", filters.minDuration);
   return p.toString();
 }
@@ -53,25 +45,29 @@ export default function Logs() {
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
   const limit = 30;
 
-  const queryParams = useMemo(() => buildParams(filters, limit, offset), [filters, limit, offset]);
+  const queryParams = useMemo(() => buildParams(filters, limit, offset), [filters, offset]);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["logs", queryParams],
     queryFn: () => api.logs.list(queryParams),
   });
 
-  const { liveLogs, status: wsStatus } = useLogStream();
+  const { liveLogs, status: wsStatus, clearLive } = useLogStream();
 
-  const hasFilters = filters.method.length > 0 || filters.path || filters.status ||
-    filters.ip || filters.from || filters.to || filters.minDuration;
+  // Clear live buffer when API data refreshes to avoid stale duplicates
+  useEffect(() => {
+    if (data) clearLive();
+  }, [data]);
 
   // Merge live logs at top only on first page with no active filters
   const displayLogs = useMemo(() => {
+    const hasFilters = filters.method.length > 0 || filters.path || filters.status ||
+      filters.ip || filters.from || filters.to || filters.minDuration;
     if (offset > 0 || hasFilters || !data?.data) return data?.data ?? [];
     const existingIds = new Set(data.data.map(l => l.id));
-    const newLive = liveLogs.filter(l => l.id != null && !existingIds.has(l.id));
+    const newLive = liveLogs.filter(l => l.id !== null && l.id !== undefined && !existingIds.has(l.id));
     return [...newLive, ...data.data];
-  }, [data, liveLogs, offset, hasFilters]);
+  }, [data, liveLogs, offset, filters]);
 
   const handleFilterChange = (f: LogFilters) => {
     setFilters(f);
