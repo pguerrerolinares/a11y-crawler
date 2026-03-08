@@ -10,7 +10,10 @@ export function useLogStream() {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (
+      wsRef.current?.readyState === WebSocket.OPEN ||
+      wsRef.current?.readyState === WebSocket.CONNECTING
+    ) return;
 
     setStatus("connecting");
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -24,13 +27,18 @@ export function useLogStream() {
         if (msg.type === "new_log" && msg.data) {
           setLiveLogs(prev => [msg.data as LogEntry, ...prev].slice(0, 100));
         }
-      } catch {}
+      } catch (err) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[useLogStream] Failed to parse WS message:", err);
+        }
+      }
     };
 
     ws.onclose = () => {
       setStatus("disconnected");
       wsRef.current = null;
       // Auto-reconnect after 3 seconds
+      clearTimeout(reconnectTimer.current);
       reconnectTimer.current = setTimeout(connect, 3000);
     };
 
