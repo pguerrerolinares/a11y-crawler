@@ -1,3 +1,4 @@
+import { memo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -6,16 +7,26 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { statusColor, formatBytes } from "@/lib/format";
 
+type InitialTab = "general" | "request" | "response";
+
 interface LogDetailModalProps {
   logId: number | null;
+  initialTab?: InitialTab;
   onClose: () => void;
+}
+
+function tryPrettyJson(data: unknown): string {
+  if (typeof data === "string") {
+    try { return JSON.stringify(JSON.parse(data), null, 2); } catch { return data; }
+  }
+  return JSON.stringify(data, null, 2);
 }
 
 function JsonBlock({ data }: { data: unknown }) {
   if (!data) return <p className="text-sm text-muted-foreground">No data</p>;
   return (
-    <pre className="text-xs bg-muted/50 rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-80 overflow-y-auto">
-      {typeof data === "string" ? data : JSON.stringify(data, null, 2)}
+    <pre className="text-xs bg-muted/50 rounded-md p-3 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all max-h-80 w-full">
+      {tryPrettyJson(data)}
     </pre>
   );
 }
@@ -24,21 +35,29 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3 py-1.5">
       <span className="text-xs text-muted-foreground w-24 shrink-0">{label}</span>
-      <span className="text-sm break-all">{value ?? "—"}</span>
+      <span className="text-sm break-words min-w-0">{value ?? "—"}</span>
     </div>
   );
 }
 
-export function LogDetailModal({ logId, onClose }: LogDetailModalProps) {
+export const LogDetailModal = memo(function LogDetailModal({ logId, initialTab = "general", onClose }: LogDetailModalProps) {
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
+
   const { data: log, isLoading } = useQuery({
     queryKey: ["log-detail", logId],
     queryFn: () => api.logs.get(logId!),
     enabled: logId !== null,
   });
 
+  // Reset tab when a new log is opened
+  const handleOpenChange = (open: boolean) => {
+    if (!open) onClose();
+    else setActiveTab(initialTab);
+  };
+
   return (
-    <Dialog open={logId !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+    <Dialog open={logId !== null} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-mono text-sm">
             {log && (
@@ -60,7 +79,7 @@ export function LogDetailModal({ logId, onClose }: LogDetailModalProps) {
         )}
 
         {log && (
-          <Tabs defaultValue="general">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList>
               <TabsTrigger value="general">General</TabsTrigger>
               <TabsTrigger value="request">Request</TabsTrigger>
@@ -128,4 +147,4 @@ export function LogDetailModal({ logId, onClose }: LogDetailModalProps) {
       </DialogContent>
     </Dialog>
   );
-}
+});
