@@ -138,6 +138,28 @@ describe("GET /api/logs", () => {
   });
 });
 
+describe("GET /api/logs filters", () => {
+  test("never returns /api/logs* paths in results", async () => {
+    const res = await fetch(`${BASE}/api/logs?limit=100`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    body.data.forEach((log: any) => {
+      expect(log.path.startsWith("/api/logs")).toBe(false);
+    });
+  });
+
+  test("response rows include has_query_params, has_request_body, has_response_body", async () => {
+    const res = await fetch(`${BASE}/api/logs?limit=5`);
+    const body = await res.json();
+    if (body.data.length > 0) {
+      const row = body.data[0];
+      expect(typeof row.hasQueryParams).toBe("boolean");
+      expect(typeof row.hasRequestBody).toBe("boolean");
+      expect(typeof row.hasResponseBody).toBe("boolean");
+    }
+  });
+});
+
 describe("DELETE /api/audits/:id", () => {
   test("deletes audit and returns 204", async () => {
     // Create a throwaway audit to delete

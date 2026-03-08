@@ -12,6 +12,9 @@ function mapLogSummary(row: any) {
     responseSize: row.response_size,
     contentType: row.content_type,
     createdAt: row.created_at,
+    hasQueryParams: Boolean(row.has_query_params),
+    hasRequestBody: Boolean(row.has_request_body),
+    hasResponseBody: Boolean(row.has_response_body),
   };
 }
 
@@ -55,14 +58,19 @@ export async function handleLogs(req: Request, url: URL): Promise<Response> {
   if (!parsed.success) {
     return Response.json({ error: "Validation failed", details: parsed.error.issues }, { status: 400 });
   }
-  const { limit, offset, path, method, status, ip, from, to, minDuration } = parsed.data;
+  const { limit, offset, path, method, status, ip, from, to, params: paramsSearch, reqBody, resBody } = parsed.data;
 
   const conditions: string[] = [];
   const values: any[] = [];
   let paramIdx = 1;
 
+  // Permanent noise filter — never show /api/logs* entries
+  conditions.push(`path NOT LIKE $${paramIdx}`);
+  values.push("/api/logs%");
+  paramIdx++;
+
   if (path) {
-    conditions.push(`path LIKE $${paramIdx}`);
+    conditions.push(`path ILIKE $${paramIdx}`);
     values.push(`%${path}%`);
     paramIdx++;
   }
@@ -103,16 +111,30 @@ export async function handleLogs(req: Request, url: URL): Promise<Response> {
     values.push(to);
     paramIdx++;
   }
-  if (minDuration !== undefined) {
-    conditions.push(`duration_ms >= $${paramIdx}`);
-    values.push(minDuration);
+  if (paramsSearch) {
+    conditions.push(`query_params::text ILIKE $${paramIdx}`);
+    values.push(`%${paramsSearch}%`);
+    paramIdx++;
+  }
+  if (reqBody) {
+    conditions.push(`request_body::text ILIKE $${paramIdx}`);
+    values.push(`%${reqBody}%`);
+    paramIdx++;
+  }
+  if (resBody) {
+    conditions.push(`response_body ILIKE $${paramIdx}`);
+    values.push(`%${resBody}%`);
     paramIdx++;
   }
 
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const where = `WHERE ${conditions.join(" AND ")}`;
 
   const logs = await db.unsafe(
-    `SELECT id, method, path, status_code, duration_ms, ip, response_size, content_type, created_at FROM request_logs ${where} ORDER BY created_at DESC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+    `SELECT id, method, path, status_code, duration_ms, ip, response_size, content_type, created_at,
+      (query_params IS NOT NULL) AS has_query_params,
+      (request_body IS NOT NULL) AS has_request_body,
+      (response_body IS NOT NULL) AS has_response_body
+     FROM request_logs ${where} ORDER BY created_at DESC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
     [...values, limit, offset]
   );
   const [{ count: total }] = await db.unsafe(
@@ -120,10 +142,5 @@ export async function handleLogs(req: Request, url: URL): Promise<Response> {
     values
   );
 
-  return Response.json({
-    data: logs.map(mapLogSummary),
-    total,
-    limit,
-    offset,
-  });
+  return Response.json({ data: logs.map(mapLogSummary), total, limit, offset });
 }
