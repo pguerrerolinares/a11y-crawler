@@ -1,14 +1,13 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useCallback, memo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type LogEntry } from "@/lib/api";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Braces, ArrowUpFromLine, ArrowDownToLine } from "lucide-react";
 import { LogFilterBar, type LogFilters, emptyFilters } from "@/components/log-filters";
 import { LogDetailModal } from "@/components/log-detail-modal";
-import { useLogStream } from "@/hooks/use-log-stream";
 import { statusColor, formatBytes } from "@/lib/format";
 
 const methodColors: Record<string, string> = {
@@ -18,6 +17,17 @@ const methodColors: Record<string, string> = {
   PUT: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
   PATCH: "bg-purple-500/15 text-purple-700 dark:text-purple-400",
 };
+
+const dateFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "short",
+  timeStyle: "medium",
+});
+
+function durationClass(ms: number): string {
+  if (ms >= 1000) return "text-red-600 dark:text-red-400 font-medium";
+  if (ms >= 500) return "text-yellow-600 dark:text-yellow-400";
+  return "";
+}
 
 function buildParams(filters: LogFilters, limit: number, offset: number): string {
   const p = new URLSearchParams();
@@ -35,61 +45,106 @@ function buildParams(filters: LogFilters, limit: number, offset: number): string
     const d = new Date(filters.to);
     if (!isNaN(d.getTime())) p.set("to", d.toISOString());
   }
-  if (filters.minDuration) p.set("minDuration", filters.minDuration);
+  if (filters.params) p.set("params", filters.params);
+  if (filters.reqBody) p.set("reqBody", filters.reqBody);
+  if (filters.resBody) p.set("resBody", filters.resBody);
   return p.toString();
 }
+
+type InitialTab = "general" | "request" | "response";
+
+interface LogSelection {
+  id: number;
+  initialTab: InitialTab;
+}
+
+const LogRow = memo(function LogRow({
+  log,
+  onSelect,
+}: {
+  log: LogEntry;
+  onSelect: (id: number, tab: InitialTab) => void;
+}) {
+  return (
+    <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => onSelect(log.id, "general")}>
+      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+        {dateFormatter.format(new Date(log.createdAt))}
+      </TableCell>
+      <TableCell className="min-w-[64px]">
+        <Badge className={methodColors[log.method] ?? ""} variant="secondary">
+          {log.method}
+        </Badge>
+      </TableCell>
+      <TableCell className="font-mono text-xs max-w-xs truncate" title={log.path}>{log.path}</TableCell>
+      <TableCell>
+        <Badge className={statusColor(log.statusCode)} variant="secondary">
+          {log.statusCode}
+        </Badge>
+      </TableCell>
+      <TableCell className={`text-xs tabular-nums ${durationClass(log.durationMs)}`}>
+        {log.durationMs}ms
+      </TableCell>
+      <TableCell className="text-xs text-muted-foreground">{log.ip}</TableCell>
+      <TableCell className="text-xs text-muted-foreground">{formatBytes(log.responseSize)}</TableCell>
+      {/* Icon columns */}
+      <TableCell className="w-8 text-center" onClick={e => { if (log.hasQueryParams) { e.stopPropagation(); onSelect(log.id, "request"); } }}>
+        {log.hasQueryParams
+          ? <Braces className="h-3 w-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 mx-auto" />
+          : <span className="text-muted-foreground/30 text-xs">—</span>
+        }
+      </TableCell>
+      <TableCell className="w-8 text-center" onClick={e => { if (log.hasRequestBody) { e.stopPropagation(); onSelect(log.id, "request"); } }}>
+        {log.hasRequestBody
+          ? <ArrowUpFromLine className="h-3 w-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 mx-auto" />
+          : <span className="text-muted-foreground/30 text-xs">—</span>
+        }
+      </TableCell>
+      <TableCell className="w-8 text-center" onClick={e => { if (log.hasResponseBody) { e.stopPropagation(); onSelect(log.id, "response"); } }}>
+        {log.hasResponseBody
+          ? <ArrowDownToLine className="h-3 w-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 mx-auto" />
+          : <span className="text-muted-foreground/30 text-xs">—</span>
+        }
+      </TableCell>
+    </TableRow>
+  );
+});
 
 export default function Logs() {
   const [filters, setFilters] = useState<LogFilters>(emptyFilters);
   const [offset, setOffset] = useState(0);
-  const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
+  const [selection, setSelection] = useState<LogSelection | null>(null);
   const limit = 30;
 
   const queryParams = useMemo(() => buildParams(filters, limit, offset), [filters, offset]);
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["logs", queryParams],
     queryFn: () => api.logs.list(queryParams),
   });
 
-  const { liveLogs, status: wsStatus, clearLive } = useLogStream();
-
-  // Clear live buffer when API data refreshes to avoid stale duplicates
-  useEffect(() => {
-    if (data) clearLive();
-  }, [data, clearLive]);
-
-  // Merge live logs at top only on first page with no active filters
-  const displayLogs = useMemo(() => {
-    const hasFilters = filters.method.length > 0 || filters.path || filters.status ||
-      filters.ip || filters.from || filters.to || filters.minDuration;
-    if (offset > 0 || hasFilters || !data?.data) return data?.data ?? [];
-    const existingIds = new Set(data.data.map(l => l.id));
-    const newLive = liveLogs.filter(l => l.id !== null && l.id !== undefined && !existingIds.has(l.id));
-    return [...newLive, ...data.data];
-  }, [data, liveLogs, offset, filters]);
-
-  const handleFilterChange = (f: LogFilters) => {
+  const handleFilterChange = useCallback((f: LogFilters) => {
     setFilters(f);
     setOffset(0);
-  };
+  }, []);
+
+  const handleSelect = useCallback((id: number, initialTab: InitialTab) => {
+    setSelection({ id, initialTab });
+  }, []);
+
+  const handleCloseModal = useCallback(() => setSelection(null), []);
+
+  const logs = data?.data ?? [];
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Request Logs</h1>
-        <div className="flex items-center gap-1.5">
-          <div className={`h-2 w-2 rounded-full ${
-            wsStatus === "connected" ? "bg-green-500 animate-pulse" :
-            wsStatus === "connecting" ? "bg-yellow-500" : "bg-gray-400"
-          }`} />
-          <span className="text-xs text-muted-foreground">
-            {wsStatus === "connected" ? "Live" : wsStatus === "connecting" ? "Connecting..." : "Disconnected"}
-          </span>
-        </div>
-      </div>
+      <h1 className="text-2xl font-bold">Request Logs</h1>
 
-      <LogFilterBar filters={filters} onChange={handleFilterChange} onRefresh={() => refetch()} />
+      <LogFilterBar
+        filters={filters}
+        onChange={handleFilterChange}
+        onRefresh={() => refetch()}
+        isFetching={isFetching}
+      />
 
       {isLoading && (
         <div className="space-y-2">
@@ -112,39 +167,24 @@ export default function Logs() {
                   <TableHead>Duration</TableHead>
                   <TableHead>IP</TableHead>
                   <TableHead>Size</TableHead>
+                  <TableHead className="w-8 text-center" title="Query Params">
+                    <Braces className="h-3 w-3 text-muted-foreground mx-auto" />
+                  </TableHead>
+                  <TableHead className="w-8 text-center" title="Request Body">
+                    <ArrowUpFromLine className="h-3 w-3 text-muted-foreground mx-auto" />
+                  </TableHead>
+                  <TableHead className="w-8 text-center" title="Response Body">
+                    <ArrowDownToLine className="h-3 w-3 text-muted-foreground mx-auto" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayLogs.map((log: LogEntry) => (
-                  <TableRow
-                    key={log.id}
-                    className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => setSelectedLogId(log.id)}
-                  >
-                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                      {new Date(log.createdAt).toLocaleString()}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={methodColors[log.method] ?? ""} variant="secondary">
-                        {log.method}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs max-w-xs truncate">{log.path}</TableCell>
-                    <TableCell>
-                      <Badge className={statusColor(log.statusCode)} variant="secondary">
-                        {log.statusCode}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className={`text-xs ${log.durationMs > 1000 ? "text-red-600 dark:text-red-400 font-medium" : ""}`}>
-                      {log.durationMs}ms
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{log.ip}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{formatBytes(log.responseSize)}</TableCell>
-                  </TableRow>
+                {logs.map((log: LogEntry) => (
+                  <LogRow key={log.id} log={log} onSelect={handleSelect} />
                 ))}
-                {displayLogs.length === 0 && (
+                {logs.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                       No logs found
                     </TableCell>
                   </TableRow>
@@ -167,7 +207,9 @@ export default function Logs() {
         </>
       )}
 
-      <LogDetailModal logId={selectedLogId} onClose={() => setSelectedLogId(null)} />
+      {selection !== null && (
+        <LogDetailModal logId={selection.id} initialTab={selection.initialTab} onClose={handleCloseModal} />
+      )}
     </div>
   );
 }
