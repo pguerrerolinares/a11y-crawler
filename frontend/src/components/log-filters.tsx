@@ -1,13 +1,12 @@
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { RefreshCw, X, SlidersHorizontal, Braces, ArrowUpFromLine, ArrowDownToLine } from "lucide-react";
+import { RefreshCw, X, Braces, ArrowUpFromLine, ArrowDownToLine } from "lucide-react";
 
 const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"] as const;
 
 const methodActiveColors: Record<string, string> = {
-  GET: "bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/40",
-  POST: "bg-green-500/20 text-green-700 dark:text-green-300 border-green-500/40",
+  GET: "bg-green-500/20 text-green-700 dark:text-green-300 border-green-500/40",
+  POST: "bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-500/40",
   PUT: "bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border-yellow-500/40",
   DELETE: "bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/40",
   PATCH: "bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/40",
@@ -45,8 +44,6 @@ interface LogFilterBarProps {
 }
 
 export function LogFilterBar({ filters, onChange, onRefresh, isFetching }: LogFilterBarProps) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
   const toggleMethod = (m: string) => {
     const next = filters.method.includes(m)
       ? filters.method.filter(x => x !== m)
@@ -54,10 +51,8 @@ export function LogFilterBar({ filters, onChange, onRefresh, isFetching }: LogFi
     onChange({ ...filters, method: next });
   };
 
-  const hasBasicFilters = filters.method.length > 0 || filters.path || filters.status ||
-    filters.ip || filters.from || filters.to;
-  const hasAdvancedFilters = !!(filters.params || filters.reqBody || filters.resBody);
-  const hasFilters = hasBasicFilters || hasAdvancedFilters;
+  const hasFilters = !!(filters.method.length > 0 || filters.path || filters.status ||
+    filters.ip || filters.from || filters.to || filters.params || filters.reqBody || filters.resBody);
 
   return (
     <div className="space-y-2">
@@ -82,16 +77,6 @@ export function LogFilterBar({ filters, onChange, onRefresh, isFetching }: LogFi
           );
         })}
         <div className="ml-auto flex items-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`h-7 px-2 text-xs ${hasAdvancedFilters ? "text-foreground" : "text-muted-foreground"}`}
-            onClick={() => setShowAdvanced(v => !v)}
-          >
-            <SlidersHorizontal className="h-3 w-3 mr-1" />
-            Filters
-            {hasAdvancedFilters && <span className="ml-1 h-1.5 w-1.5 rounded-full bg-blue-500 inline-block" />}
-          </Button>
           {hasFilters && (
             <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => onChange(emptyFilters)}>
               <X className="h-3 w-3 mr-1" /> Clear
@@ -145,36 +130,72 @@ export function LogFilterBar({ filters, onChange, onRefresh, isFetching }: LogFi
         </div>
       </div>
 
-      {/* Row 3: Advanced filters (collapsible) */}
-      {showAdvanced && (
-        <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
-          <div className="relative">
-            <Braces className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
-            <Input
-              placeholder="Search params…"
-              value={filters.params}
-              onChange={e => onChange({ ...filters, params: e.target.value })}
-              className="h-8 text-xs pl-7"
-            />
-          </div>
-          <div className="relative">
-            <ArrowUpFromLine className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
-            <Input
-              placeholder="Search req body…"
-              value={filters.reqBody}
-              onChange={e => onChange({ ...filters, reqBody: e.target.value })}
-              className="h-8 text-xs pl-7"
-            />
-          </div>
-          <div className="relative">
-            <ArrowDownToLine className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
-            <Input
-              placeholder="Search res body…"
-              value={filters.resBody}
-              onChange={e => onChange({ ...filters, resBody: e.target.value })}
-              className="h-8 text-xs pl-7"
-            />
-          </div>
+      {/* Row 3: Advanced filters */}
+      <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
+        <div className="relative">
+          <Braces className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search params…"
+            value={filters.params}
+            onChange={e => onChange({ ...filters, params: e.target.value })}
+            className="h-8 text-xs pl-7"
+          />
+        </div>
+        <div className="relative">
+          <ArrowUpFromLine className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search req body…"
+            value={filters.reqBody}
+            onChange={e => onChange({ ...filters, reqBody: e.target.value })}
+            className="h-8 text-xs pl-7"
+          />
+        </div>
+        <div className="relative">
+          <ArrowDownToLine className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search res body…"
+            value={filters.resBody}
+            onChange={e => onChange({ ...filters, resBody: e.target.value })}
+            className="h-8 text-xs pl-7"
+          />
+        </div>
+      </div>
+
+      {hasFilters && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] text-muted-foreground font-medium">Active:</span>
+          {filters.method.map(m => (
+            <span key={m} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium">
+              {m}
+              <button onClick={() => onChange({ ...filters, method: filters.method.filter(x => x !== m) })} className="hover:text-foreground">
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </span>
+          ))}
+          {filters.status && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium">
+              Status: {filters.status}
+              <button onClick={() => onChange({ ...filters, status: "" })} className="hover:text-foreground"><X className="h-2.5 w-2.5" /></button>
+            </span>
+          )}
+          {filters.path && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium">
+              Path: {filters.path}
+              <button onClick={() => onChange({ ...filters, path: "" })} className="hover:text-foreground"><X className="h-2.5 w-2.5" /></button>
+            </span>
+          )}
+          {filters.ip && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium">
+              IP: {filters.ip}
+              <button onClick={() => onChange({ ...filters, ip: "" })} className="hover:text-foreground"><X className="h-2.5 w-2.5" /></button>
+            </span>
+          )}
+          {(filters.from || filters.to) && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium">
+              Date range
+              <button onClick={() => onChange({ ...filters, from: "", to: "" })} className="hover:text-foreground"><X className="h-2.5 w-2.5" /></button>
+            </span>
+          )}
         </div>
       )}
     </div>

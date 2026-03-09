@@ -1,18 +1,20 @@
-import { useState, useMemo, useCallback, memo } from "react";
+import { useState, useMemo, useCallback, memo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type LogEntry } from "@/lib/api";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, ChevronRight, Braces, ArrowUpFromLine, ArrowDownToLine } from "lucide-react";
+import { Braces, ArrowUpFromLine, ArrowDownToLine, Activity, AlertCircle, Clock, Download } from "lucide-react";
+import { Pagination } from "@/components/pagination";
 import { LogFilterBar, type LogFilters, emptyFilters } from "@/components/log-filters";
 import { LogDetailModal } from "@/components/log-detail-modal";
+import { StatCard } from "@/components/stat-card";
 import { statusColor, formatBytes } from "@/lib/format";
 
 const methodColors: Record<string, string> = {
-  GET: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
-  POST: "bg-green-500/15 text-green-700 dark:text-green-400",
+  GET: "bg-green-500/15 text-green-700 dark:text-green-400",
+  POST: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
   DELETE: "bg-red-500/15 text-red-700 dark:text-red-400",
   PUT: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
   PATCH: "bg-purple-500/15 text-purple-700 dark:text-purple-400",
@@ -133,11 +135,62 @@ export default function Logs() {
 
   const handleCloseModal = useCallback(() => setSelection(null), []);
 
+  useEffect(() => { document.title = "Logs — a11y Crawler"; }, []);
+
   const logs = data?.data ?? [];
 
+  const pageStats = useMemo(() => {
+    const logs = data?.data ?? [];
+    const errors4xx = logs.filter((l) => l.statusCode >= 400 && l.statusCode < 500).length;
+    const errors5xx = logs.filter((l) => l.statusCode >= 500).length;
+    const avgResponse =
+      logs.length > 0
+        ? Math.round(logs.reduce((s, l) => s + l.durationMs, 0) / logs.length)
+        : 0;
+    return { total: data?.total ?? 0, errors4xx, errors5xx, avgResponse };
+  }, [data]);
+
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Request Logs</h1>
+    <div className="space-y-6">
+      {/* Page header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Application Logs</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Monitor and analyze incoming HTTP requests
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" size="sm">
+            <Download className="h-4 w-4 mr-1.5" />
+            Export
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard title="Total Requests" value={pageStats.total.toLocaleString()} icon={Activity} />
+        <StatCard
+          title="4xx Errors"
+          value={pageStats.errors4xx}
+          icon={AlertCircle}
+          iconClassName="bg-amber-50 dark:bg-amber-950"
+          trend={pageStats.errors4xx > 0 ? { label: "Client errors", positive: false } : undefined}
+        />
+        <StatCard
+          title="5xx Errors"
+          value={pageStats.errors5xx}
+          icon={AlertCircle}
+          iconClassName="bg-red-50 dark:bg-red-950"
+          trend={pageStats.errors5xx > 0 ? { label: "Server errors", positive: false } : undefined}
+        />
+        <StatCard
+          title="Avg Response"
+          value={`${pageStats.avgResponse}ms`}
+          icon={Clock}
+        />
+      </div>
 
       <LogFilterBar
         filters={filters}
@@ -156,7 +209,7 @@ export default function Logs() {
 
       {!isLoading && (
         <>
-          <div className="rounded-md border overflow-x-auto">
+          <div className="hidden md:block rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -193,16 +246,40 @@ export default function Logs() {
             </Table>
           </div>
 
+          {/* Mobile cards */}
+          <div className="md:hidden divide-y rounded-md border">
+            {logs.map((log: LogEntry) => (
+              <div
+                key={log.id}
+                className="px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer"
+                onClick={() => handleSelect(log.id, "general")}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Badge className={methodColors[log.method] ?? ""} variant="secondary">
+                      {log.method}
+                    </Badge>
+                    <span className="font-mono text-xs truncate">{log.path}</span>
+                  </div>
+                  <Badge className={statusColor(log.statusCode)} variant="secondary">
+                    {log.statusCode}
+                  </Badge>
+                </div>
+                <div className="flex gap-4 mt-1.5 text-[10px] text-muted-foreground">
+                  <span>{dateFormatter.format(new Date(log.createdAt))}</span>
+                  <span className={durationClass(log.durationMs)}>{log.durationMs}ms</span>
+                  <span>{log.ip}</span>
+                </div>
+              </div>
+            ))}
+            {logs.length === 0 && (
+              <div className="text-center text-muted-foreground py-8 text-sm">No logs found</div>
+            )}
+          </div>
+
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">{data?.total ?? 0} total logs</span>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="sm" disabled={!data || offset + limit >= data.total} onClick={() => setOffset(offset + limit)}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+            <Pagination total={data?.total ?? 0} limit={limit} offset={offset} onChange={setOffset} />
           </div>
         </>
       )}

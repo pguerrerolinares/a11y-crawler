@@ -4,6 +4,7 @@ import { ErrorBoundary } from "./components/error-boundary";
 import Dashboard from "./pages/dashboard";
 import AuditDetail from "./pages/audit-detail";
 import Logs from "./pages/logs";
+import Reports from "./pages/reports";
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/audits/:id" element={<AuditDetail />} />
           <Route path="/logs" element={<Logs />} />
+          <Route path="/reports" element={<Reports />} />
         </Routes>
       </ErrorBoundary>
     </Layout>
