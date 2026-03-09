@@ -1,6 +1,8 @@
 import { getDb } from "../db/client.ts";
 
 const MAX_RESPONSE_BODY = 2048;
+const MAX_ARRAY_ITEMS = 5;
+const MAX_STRING_LEN = 200;
 
 const SENSITIVE_KEYS = /^(password|token|secret|authorization|cookie|api.?key)$/i;
 
@@ -11,6 +13,49 @@ function sanitize(obj: unknown): unknown {
     result[k] = SENSITIVE_KEYS.test(k) ? "[REDACTED]" : v;
   }
   return result;
+}
+
+/**
+ * Truncate a parsed JSON value to fit within MAX_RESPONSE_BODY when serialized.
+ * Arrays are capped to MAX_ARRAY_ITEMS with a "[N more items]" marker.
+ * Long strings are shortened with a "…[truncated]" suffix.
+ * Always produces valid JSON.
+ */
+function truncateJson(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") {
+    return value.length > MAX_STRING_LEN
+      ? value.slice(0, MAX_STRING_LEN) + "…[truncated]"
+      : value;
+  }
+  if (typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    const truncated = value.slice(0, MAX_ARRAY_ITEMS).map(truncateJson);
+    if (value.length > MAX_ARRAY_ITEMS) {
+      truncated.push(`[${value.length - MAX_ARRAY_ITEMS} more items]`);
+    }
+    return truncated;
+  }
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    result[k] = truncateJson(v);
+  }
+  return result;
+}
+
+function smartTruncateBody(text: string, contentType: string | null): string {
+  if (text.length <= MAX_RESPONSE_BODY) return text;
+  // Only attempt smart truncation for JSON
+  if (contentType && contentType.includes("application/json")) {
+    try {
+      const parsed = JSON.parse(text);
+      const truncated = truncateJson(parsed);
+      return JSON.stringify(truncated);
+    } catch {
+      // Fallback: raw slice (shouldn't happen for valid JSON responses)
+    }
+  }
+  return text.slice(0, MAX_RESPONSE_BODY);
 }
 
 function isNoisyPath(pathname: string): boolean {
@@ -49,7 +94,7 @@ export async function logRequest(req: Request, response: Response, durationMs: n
     const cloned = response.clone();
     const text = await cloned.text();
     responseSize = new TextEncoder().encode(text).byteLength;
-    responseBody = text.length > MAX_RESPONSE_BODY ? text.slice(0, MAX_RESPONSE_BODY) : text;
+    responseBody = smartTruncateBody(text, contentType);
   } catch (e) {
     console.warn("[logger] parse failed:", (e as Error).message);
   }
