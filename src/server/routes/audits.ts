@@ -111,5 +111,8 @@ function mapAuditRow(row: any): AuditResponse {
     summary: row.summary,
     discovery: row.discovery,
     llmUsage: row.llm_usage,
+    wcagScore: row.wcag_score,
+    durationSeconds: row.duration_seconds,
+    crawlErrors: row.crawl_errors,
   };
 }
