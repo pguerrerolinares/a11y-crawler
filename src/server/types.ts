@@ -4,7 +4,7 @@ import { z } from "zod";
 export const CreateAuditSchema = z.object({
   url: z.url(),
   wcagLevel: z.enum(["A", "AA", "AAA"]).default("AA"),
-  maxPages: z.number().int().min(1).max(500).default(100),
+  maxPages: z.number().int().min(1).max(50).default(30),
   maxDepth: z.number().int().min(1).max(10).default(5),
   concurrency: z.number().int().min(1).max(5).default(2),
   skipSitemap: z.boolean().default(false),

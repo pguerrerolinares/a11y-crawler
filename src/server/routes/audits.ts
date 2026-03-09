@@ -43,7 +43,12 @@ async function createAudit(req: Request): Promise<Response> {
     RETURNING id, url, status, created_at
   `;
 
-  startCrawl(audit.id, auditUrl, config);
+  try {
+    startCrawl(audit.id, auditUrl, config);
+  } catch (err) {
+    await db`UPDATE audits SET status = 'failed', error = ${(err as Error).message} WHERE id = ${audit.id}`;
+    return Response.json({ error: (err as Error).message }, { status: 429 });
+  }
 
   return Response.json({
     id: audit.id,
