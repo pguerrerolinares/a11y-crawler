@@ -36,6 +36,11 @@ Bun.serve({
       return undefined as any;
     }
 
+    // Health check — fast, no logging
+    if (url.pathname === "/health" || url.pathname === "/api/health") {
+      return new Response("OK", { status: 200 });
+    }
+
     // Clone request before anything consumes the body
     const reqClone = req.clone();
     try {
