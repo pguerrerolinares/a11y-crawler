@@ -10,8 +10,8 @@ RUN bun run build
 FROM oven/bun:1 AS production
 WORKDIR /app
 
-# Install Playwright + Chromium
-RUN bunx playwright install --with-deps chromium
+# Install Playwright + Chromium + procps (needed by Crawlee for memory monitoring)
+RUN bunx playwright install --with-deps chromium && apt-get install -y procps && rm -rf /var/lib/apt/lists/*
 
 # Install production dependencies
 COPY package.json bun.lock* ./
