@@ -1,5 +1,5 @@
 import { getDb } from "../db/client.ts";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { existsSync } from "node:fs";
 
 const reportsDir = process.env.REPORTS_DIR || "./reports";
@@ -13,6 +13,11 @@ export async function handleExport(req: Request, url: URL): Promise<Response> {
   if (!match) return Response.json({ error: "Not Found" }, { status: 404 });
 
   const [, auditId, format] = match;
+
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_RE.test(auditId)) {
+    return Response.json({ error: "Invalid audit ID" }, { status: 400 });
+  }
 
   // Validate audit exists and is completed
   const db = getDb();
@@ -38,55 +43,59 @@ async function exportCsv(auditId: string): Promise<Response> {
 
   const stream = new ReadableStream({
     async start(controller) {
-      const encoder = new TextEncoder();
+      try {
+        const encoder = new TextEncoder();
 
-      // Header row
-      controller.enqueue(encoder.encode(CSV_HEADERS.join(",") + "\r\n"));
+        // Header row
+        controller.enqueue(encoder.encode(CSV_HEADERS.join(",") + "\r\n"));
 
-      // Stream issues in batches of 500
-      const BATCH = 500;
-      let offset = 0;
+        // Stream issues in batches of 500
+        const BATCH = 500;
+        let offset = 0;
 
-      while (true) {
-        const issues = await db`
-          SELECT i.rule, i.impact, i.category, i.selector, i.description,
-                 i.help, i.wcag_tags, i.suggested_fix, i.page_id
-          FROM issues i
-          WHERE i.audit_id = ${auditId}
-          ORDER BY i.impact, i.rule
-          LIMIT ${BATCH} OFFSET ${offset}
-        `;
+        while (true) {
+          const issues = await db`
+            SELECT i.rule, i.impact, i.category, i.selector, i.description,
+                   i.help, i.wcag_tags, i.suggested_fix, i.page_id
+            FROM issues i
+            WHERE i.audit_id = ${auditId}
+            ORDER BY i.impact, i.rule
+            LIMIT ${BATCH} OFFSET ${offset}
+          `;
 
-        if (issues.length === 0) break;
+          if (issues.length === 0) break;
 
-        // Resolve page URLs in batch
-        const pageIds = [...new Set(issues.map((i: any) => i.page_id))];
-        const pages = await db`SELECT id, url FROM pages WHERE id IN ${db(pageIds)}`;
-        const pageUrlMap = new Map(pages.map((p: any) => [p.id, p.url]));
+          // Resolve page URLs in batch
+          const pageIds = [...new Set(issues.map((i: any) => i.page_id))];
+          const pages = await db`SELECT id, url FROM pages WHERE id IN ${db(pageIds)}`;
+          const pageUrlMap = new Map(pages.map((p: any) => [p.id, p.url]));
 
-        for (const issue of issues) {
-          const row = [
-            issue.rule,
-            issue.impact,
-            issue.category ?? "",
-            pageUrlMap.get(issue.page_id) ?? "",
-            issue.selector ?? "",
-            issue.description ?? "",
-            issue.help ?? "",
-            Array.isArray(issue.wcag_tags)
-              ? issue.wcag_tags.join(";")
-              : (typeof issue.wcag_tags === "string" ? issue.wcag_tags : ""),
-            issue.suggested_fix ?? "",
-          ].map(csvEscape).join(",");
+          for (const issue of issues) {
+            const row = [
+              issue.rule,
+              issue.impact,
+              issue.category ?? "",
+              pageUrlMap.get(issue.page_id) ?? "",
+              issue.selector ?? "",
+              issue.description ?? "",
+              issue.help ?? "",
+              Array.isArray(issue.wcag_tags)
+                ? issue.wcag_tags.join(";")
+                : (typeof issue.wcag_tags === "string" ? issue.wcag_tags : ""),
+              issue.suggested_fix ?? "",
+            ].map(csvEscape).join(",");
 
-          controller.enqueue(encoder.encode(row + "\r\n"));
+            controller.enqueue(encoder.encode(row + "\r\n"));
+          }
+
+          offset += issues.length;
+          if (issues.length < BATCH) break;
         }
 
-        offset += issues.length;
-        if (issues.length < BATCH) break;
+        controller.close();
+      } catch (err) {
+        controller.error(err);
       }
-
-      controller.close();
     },
   });
 
@@ -101,6 +110,11 @@ async function exportCsv(auditId: string): Promise<Response> {
 
 async function exportPdf(auditId: string): Promise<Response> {
   const pdfPath = join(reportsDir, `${auditId}.pdf`);
+
+  const resolved = resolve(pdfPath);
+  if (!resolved.startsWith(resolve(reportsDir))) {
+    return Response.json({ error: "Invalid path" }, { status: 400 });
+  }
 
   if (!existsSync(pdfPath)) {
     return Response.json(
@@ -120,9 +134,12 @@ async function exportPdf(auditId: string): Promise<Response> {
   });
 }
 
-/** Escape a CSV field value: wrap in quotes if it contains comma, quote, or newline. */
+/** Escape a CSV field value: prefix dangerous leading characters, wrap in quotes if needed. */
 export function csvEscape(value: unknown): string {
-  const str = String(value ?? "");
+  let str = String(value ?? "");
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = "'" + str;
+  }
   if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
     return `"${str.replace(/"/g, '""')}"`;
   }

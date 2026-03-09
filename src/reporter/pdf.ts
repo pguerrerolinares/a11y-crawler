@@ -2,6 +2,7 @@ import { chromium } from "playwright";
 import { writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { SiteReport } from "../types/report.ts";
+import { computeWcagScore } from "./wcag-score.ts";
 
 /**
  * Generates a PDF report from a SiteReport and saves it to outputPath.
@@ -146,13 +147,8 @@ function scoreColor(summary: SiteReport["summary"]): string {
 }
 
 function computeScoreStr(summary: SiteReport["summary"]): string {
-  if (summary.totalPages === 0) return "N/A";
-  const totalPenalty =
-    (summary.issuesByImpact.critical ?? 0) * 10 +
-    (summary.issuesByImpact.serious ?? 0) * 5 +
-    (summary.issuesByImpact.moderate ?? 0) * 2 +
-    (summary.issuesByImpact.minor ?? 0) * 1;
-  return String(Math.max(0, Math.round(100 - totalPenalty / summary.totalPages)));
+  const score = computeWcagScore(summary.issuesByImpact, summary.totalPages);
+  return score === null ? "N/A" : String(score);
 }
 
 function escHtml(str: string): string {
@@ -160,5 +156,6 @@ function escHtml(str: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }

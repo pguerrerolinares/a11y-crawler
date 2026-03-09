@@ -87,7 +87,7 @@ async function handleApiRoute(req: Request, url: URL): Promise<Response> {
     if (url.pathname.endsWith("/pages")) return handlePages(req, url);
     return handleIssues(req, url);
   }
-  // Export routes — before the /api/audits catch-all
+  // Export routes — after pages/issues/shared, before /api/audits catch-all
   if (url.pathname.match(/^\/api\/audits\/[^/]+\/export\/(csv|pdf)$/)) {
     return handleExport(req, url);
   }

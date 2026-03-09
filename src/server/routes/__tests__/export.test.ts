@@ -26,4 +26,11 @@ describe("csvEscape", () => {
     expect(csvEscape(null)).toBe("");
     expect(csvEscape(undefined)).toBe("");
   });
+
+  test("formula injection: prefixes dangerous leading characters", () => {
+    expect(csvEscape("=SUM(A1)")).toBe("'=SUM(A1)");
+    expect(csvEscape("+cmd")).toBe("'+cmd");
+    expect(csvEscape("-cmd")).toBe("'-cmd");
+    expect(csvEscape("@SUM")).toBe("'@SUM");
+  });
 });
