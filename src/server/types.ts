@@ -6,7 +6,7 @@ export const CreateAuditSchema = z.object({
   wcagLevel: z.enum(["A", "AA", "AAA"]).default("AA"),
   maxPages: z.number().int().min(1).max(50).default(30),
   maxDepth: z.number().int().min(1).max(10).default(5),
-  concurrency: z.number().int().min(1).max(5).default(2),
+  concurrency: z.number().int().min(1).max(2).default(1),
   skipSitemap: z.boolean().default(false),
   noEnrich: z.boolean().default(false),
 });

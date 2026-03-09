@@ -78,6 +78,11 @@ export async function audit(
     requestHandlerTimeoutSecs: (config.pageTimeout / 1000) * 8, // 240s — nav interactions + LLM calls
     maxRequestRetries: 1, // reduce retry loops on timeout
     headless: true,
+    launchContext: {
+      launchOptions: {
+        args: ["--disable-dev-shm-usage", "--no-sandbox"],
+      },
+    },
 
     async requestHandler(context) {
       try {

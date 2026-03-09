@@ -13,7 +13,7 @@ export async function generatePdf(report: SiteReport, outputPath: string): Promi
 
   const html = buildHtml(report);
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, args: ["--disable-dev-shm-usage", "--no-sandbox"] });
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle" });
