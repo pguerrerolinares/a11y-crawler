@@ -157,7 +157,7 @@ export const LogDetailModal = memo(function LogDetailModal({
     <Dialog open={logId !== null} onOpenChange={handleOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="sm:max-w-[860px] h-[90vh] sm:h-[85vh] p-0 gap-0 flex flex-col overflow-hidden"
+        className="sm:max-w-[860px] p-0 gap-0 flex flex-col overflow-hidden fixed inset-x-0 bottom-0 h-[90vh] rounded-t-2xl sm:relative sm:inset-auto sm:h-[85vh] sm:rounded-lg"
       >
         {/* ── Header ── */}
         <div className="flex items-center justify-between border-b px-4 py-3 gap-3 shrink-0">

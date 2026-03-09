@@ -4,10 +4,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api, type IssueResponse } from "@/lib/api";
+import { Pagination } from "@/components/pagination";
 
 const impactColors: Record<string, string> = {
   critical: "bg-red-500/15 text-red-700 dark:text-red-400",
@@ -47,7 +46,7 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
     <div className="space-y-4">
       <div className="flex gap-2 flex-wrap">
         <Select value={impact} onValueChange={(v: string | null) => { setImpact(!v || v === "all" ? "" : v); setOffset(0); }}>
-          <SelectTrigger className="w-36"><SelectValue placeholder="Impact" /></SelectTrigger>
+          <SelectTrigger className="w-36" aria-label="Filter by impact"><SelectValue placeholder="Impact" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All impacts</SelectItem>
             <SelectItem value="critical">Critical</SelectItem>
@@ -137,17 +136,8 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
           </div>
 
           <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">
-              {data.total} total issues
-            </span>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="sm" disabled={offset + limit >= data.total} onClick={() => setOffset(offset + limit)}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+            <span className="text-xs text-muted-foreground">{data.total} total issues</span>
+            <Pagination total={data.total} limit={limit} offset={offset} onChange={setOffset} />
           </div>
         </>
       )}

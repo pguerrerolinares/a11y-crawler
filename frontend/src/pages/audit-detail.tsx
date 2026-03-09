@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type PageResponse, type SharedIssueResponse } from "@/lib/api";
@@ -46,6 +47,11 @@ export default function AuditDetail() {
     },
   });
 
+  useEffect(() => {
+    if (audit?.url) document.title = `${audit.url.replace(/^https?:\/\//, "")} — a11y Crawler`;
+    else document.title = "Audit — a11y Crawler";
+  }, [audit?.url]);
+
   if (isLoading) {
     return <div className="space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-64" /></div>;
   }
@@ -62,8 +68,9 @@ export default function AuditDetail() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
+          <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-1.5">
             <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline text-sm">Audits</span>
           </Button>
           <div>
             <h1 className="text-xl font-bold flex items-center gap-2">
