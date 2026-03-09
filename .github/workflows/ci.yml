@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    branches: [master]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+
+jobs:
+  # ── Stage 1: TypeScript checks (parallel) ──────────────────────
+  typecheck-backend:
+    name: TypeCheck Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: TypeScript check
+        run: bunx tsc --noEmit
+
+  typecheck-frontend:
+    name: TypeCheck Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: cd frontend && bun install --frozen-lockfile
+      - name: TypeScript check
+        run: cd frontend && bunx tsc -b
+
+  # ── Stage 2: Docker build (validates full build pipeline) ──────
+  build:
+    name: Docker Build
+    needs: [typecheck-backend, typecheck-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t a11y-crawler .
+
+  # ── Stage 3: Deploy (only on master push, after build) ─────────
+  deploy:
+    name: Deploy to Coolify
+    needs: [build]
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push' && vars.COOLIFY_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Coolify deploy
+        run: |
+          curl -f -X POST "${{ secrets.COOLIFY_WEBHOOK }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --max-time 10
+          echo "Deploy triggered successfully"
