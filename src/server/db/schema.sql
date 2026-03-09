@@ -11,7 +11,10 @@ CREATE TABLE IF NOT EXISTS audits (
   error         TEXT,
   summary       JSONB,
   discovery     JSONB,
-  llm_usage     JSONB
+  llm_usage        JSONB,
+  wcag_score       INT,
+  duration_seconds INT,
+  crawl_errors     JSONB
 );
 
 CREATE TABLE IF NOT EXISTS pages (
@@ -92,3 +95,9 @@ CREATE INDEX IF NOT EXISTS idx_issues_rule ON issues(audit_id, rule);
 CREATE INDEX IF NOT EXISTS idx_events_audit ON audit_events(audit_id);
 CREATE INDEX IF NOT EXISTS idx_logs_created ON request_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_logs_path ON request_logs(path);
+
+-- Migration 2026-03-09: backend backlog
+-- Run once on existing databases:
+-- ALTER TABLE audits ADD COLUMN IF NOT EXISTS wcag_score INT;
+-- ALTER TABLE audits ADD COLUMN IF NOT EXISTS duration_seconds INT;
+-- ALTER TABLE audits ADD COLUMN IF NOT EXISTS crawl_errors JSONB;
