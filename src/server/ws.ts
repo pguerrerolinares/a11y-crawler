@@ -13,7 +13,7 @@ export function handleWsUpgrade(req: Request, server: any): Response | undefined
   const match = new URL(req.url).pathname.match(/^\/ws\/audits\/([^/]+)$/);
   if (!match) return undefined;
   const auditId = match[1];
-  const success = server.upgrade<WsData>(req, { data: { auditId, mode: "audit" } });
+  const success = server.upgrade(req, { data: { auditId, mode: "audit" } as WsData });
   if (success) return undefined;
   return new Response("WebSocket upgrade failed", { status: 400 });
 }
