@@ -1,6 +1,8 @@
 import { SQL } from "bun";
+import { join } from "node:path";
 import { audit } from "../orchestrator.ts";
 import { writeReportToPostgres } from "../reporter/postgres.ts";
+import { generatePdf } from "../reporter/pdf.ts";
 import type { ProgressCallback } from "../types/events.ts";
 
 const auditId = process.argv[2];
@@ -23,6 +25,7 @@ if (!dbUrl) {
 }
 
 const db = new SQL(dbUrl);
+const reportsDir = process.env.REPORTS_DIR || "./reports";
 
 const rawConfig = JSON.parse(configJson);
 const crawlConfig = {
@@ -49,6 +52,16 @@ const onProgress: ProgressCallback = async (event) => {
 try {
   const report = await audit(crawlConfig, onProgress);
   await writeReportToPostgres(db, auditId, report);
+
+  // PDF generation — non-fatal: failure should not fail the audit
+  const pdfPath = join(reportsDir, `${auditId}.pdf`);
+  try {
+    await generatePdf(report, pdfPath);
+    console.log(`PDF saved: ${pdfPath}`);
+  } catch (pdfErr) {
+    console.error(`PDF generation failed (non-fatal): ${pdfErr}`);
+  }
+
   console.log(`Audit ${auditId} completed: ${report.summary.totalPages} pages, ${report.summary.totalIssues} issues`);
 } catch (err) {
   const message = err instanceof Error ? err.message : String(err);
