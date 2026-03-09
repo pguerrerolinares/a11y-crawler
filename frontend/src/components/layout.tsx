@@ -3,7 +3,6 @@ import { Link, useLocation } from "react-router-dom";
 import { ShieldCheck, Bell, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DarkModeToggle } from "@/components/dark-mode-toggle";
-import { Footer } from "@/components/footer";
 
 const NAV_LINKS = [
   { to: "/", label: "Scanner" },
