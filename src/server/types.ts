@@ -50,6 +50,9 @@ export interface AuditResponse {
   summary: Record<string, unknown> | null;
   discovery: Record<string, unknown> | null;
   llmUsage: Record<string, unknown> | null;
+  wcagScore: number | null;
+  durationSeconds: number | null;
+  crawlErrors: Array<{ url: string; phase: string; message: string; timestamp: string }> | null;
 }
 
 export interface PageResponse {
