@@ -16,17 +16,17 @@ interface FormData {
   concurrency: number;
 }
 
-const QUICK_SCAN: Partial<FormData> = { maxPages: 10, maxDepth: 3, wcagLevel: "AA" };
-const FULL_AUDIT: Partial<FormData> = { maxPages: 100, maxDepth: 5, wcagLevel: "AAA" };
+const QUICK_SCAN: Partial<FormData> = { maxPages: 10, maxDepth: 2, wcagLevel: "AA" };
+const FULL_AUDIT: Partial<FormData> = { maxPages: 50, maxDepth: 5, wcagLevel: "AAA" };
 
 export function AuditFormDialog() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormData>({
     url: "",
     wcagLevel: "AA",
-    maxPages: 100,
-    maxDepth: 5,
-    concurrency: 2,
+    maxPages: 30,
+    maxDepth: 3,
+    concurrency: 1,
   });
   const [error, setError] = useState("");
 
@@ -107,7 +107,7 @@ export function AuditFormDialog() {
               <Input
                 type="number"
                 min={1}
-                max={500}
+                max={50}
                 value={form.maxPages}
                 onChange={(e) => setForm((f) => ({ ...f, maxPages: Number(e.target.value) }))}
               />
@@ -117,19 +117,9 @@ export function AuditFormDialog() {
               <Input
                 type="number"
                 min={1}
-                max={10}
+                max={5}
                 value={form.maxDepth}
                 onChange={(e) => setForm((f) => ({ ...f, maxDepth: Number(e.target.value) }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Concurrency</label>
-              <Input
-                type="number"
-                min={1}
-                max={5}
-                value={form.concurrency}
-                onChange={(e) => setForm((f) => ({ ...f, concurrency: Number(e.target.value) }))}
               />
             </div>
           </div>
