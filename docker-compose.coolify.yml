@@ -1,0 +1,50 @@
+# docker-compose.coolify.yml — Coolify deployment
+# Coolify's Traefik handles SSL + domain routing + basic auth.
+# Reuses PostgreSQL from ai-news-platform via shared coolify network.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "3000"
+    networks:
+      - coolify
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_API_BASE_URL=${LLM_API_BASE_URL:-https://api.moonshot.ai/v1}
+      - NODE_ENV=production
+      - PORT=3000
+      - REPORTS_DIR=/app/reports
+    volumes:
+      - reports:/app/reports
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.a11y-https.rule=Host(`a11y.pguerrero.me`)"
+      - "traefik.http.routers.a11y-https.entrypoints=https"
+      - "traefik.http.routers.a11y-https.tls=true"
+      - "traefik.http.routers.a11y-https.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.a11y-http.rule=Host(`a11y.pguerrero.me`)"
+      - "traefik.http.routers.a11y-http.entrypoints=http"
+      - "traefik.http.routers.a11y-http.middlewares=a11y-redirect"
+      - "traefik.http.middlewares.a11y-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.a11y-https.middlewares=a11y-auth"
+      - "traefik.http.middlewares.a11y-auth.basicauth.users=${BASIC_AUTH_USER}"
+      - "traefik.http.services.a11y.loadbalancer.server.port=3000"
+      - "traefik.docker.network=coolify"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+networks:
+  coolify:
+    external: true
+
+volumes:
+  reports:
