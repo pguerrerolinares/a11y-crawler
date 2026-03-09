@@ -1,4 +1,5 @@
 import type { SiteReport } from "../types/report.ts";
+import { computeWcagScore } from "./wcag-score.ts";
 
 export async function writeReportToPostgres(
   db: any,
@@ -48,13 +49,20 @@ async function writeReport(db: any, auditId: string, report: SiteReport): Promis
     `;
   }
 
+  const wcagScore = computeWcagScore(report.summary.issuesByImpact, report.summary.totalPages);
+  const durationSeconds = report.meta.totalDurationSeconds;
+  const crawlErrors = report.errors.length > 0 ? report.errors : null;
+
   await db`
     UPDATE audits SET
       status = 'completed',
       finished_at = NOW(),
       summary = ${report.summary},
       discovery = ${report.discovery},
-      llm_usage = ${report.llmUsage}
+      llm_usage = ${report.llmUsage},
+      wcag_score = ${wcagScore},
+      duration_seconds = ${durationSeconds},
+      crawl_errors = ${crawlErrors}
     WHERE id = ${auditId}
   `;
 }
