@@ -7,6 +7,7 @@ import { handleAudits } from "./routes/audits.ts";
 import { handlePages } from "./routes/pages.ts";
 import { handleIssues } from "./routes/issues.ts";
 import { handleLogs } from "./routes/logs.ts";
+import { handleExport } from "./routes/export.ts";
 import { handleWsUpgrade, wsOpen, wsClose, wsMessage, startNotifyListener } from "./ws.ts";
 
 const env = validateEnv();
@@ -85,6 +86,10 @@ async function handleApiRoute(req: Request, url: URL): Promise<Response> {
   if (url.pathname.match(/^\/api\/audits\/[^/]+\/(pages|issues|shared)$/)) {
     if (url.pathname.endsWith("/pages")) return handlePages(req, url);
     return handleIssues(req, url);
+  }
+  // Export routes — before the /api/audits catch-all
+  if (url.pathname.match(/^\/api\/audits\/[^/]+\/export\/(csv|pdf)$/)) {
+    return handleExport(req, url);
   }
   if (url.pathname.startsWith("/api/pages/")) {
     if (url.pathname.match(/\/issues$/)) return handleIssues(req, url);
