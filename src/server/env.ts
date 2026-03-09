@@ -6,6 +6,7 @@ const envSchema = z.object({
   LLM_API_BASE_URL: z.url().default("https://api.moonshot.ai/v1"),
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.enum(["development", "production"]).default("development"),
+  REPORTS_DIR: z.string().default("./reports"),
 });
 
 export type Env = z.infer<typeof envSchema>;

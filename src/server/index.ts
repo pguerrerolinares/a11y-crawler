@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { mkdirSync } from "node:fs";
 import { validateEnv } from "./env.ts";
 import { initDb } from "./db/client.ts";
 import { logRequest } from "./middleware/logger.ts";
@@ -12,6 +13,9 @@ const env = validateEnv();
 
 await initDb();
 console.log("Database initialized");
+
+mkdirSync(env.REPORTS_DIR, { recursive: true });
+console.log(`Reports directory: ${env.REPORTS_DIR}`);
 
 await startNotifyListener();
 
