@@ -1,8 +1,13 @@
 import { getDb } from "../db/client.ts";
 
 const activeJobs = new Map<string, { proc: ReturnType<typeof Bun.spawn> }>();
+const MAX_CONCURRENT_AUDITS = 1;
 
 export function startCrawl(auditId: string, url: string, config: Record<string, unknown>) {
+  if (activeJobs.size >= MAX_CONCURRENT_AUDITS) {
+    throw new Error("Maximum concurrent audits reached. Please wait for the current audit to finish.");
+  }
+
   const fullConfig = { ...config, url };
 
   const proc = Bun.spawn([
