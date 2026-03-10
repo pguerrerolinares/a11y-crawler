@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Page } from "playwright";
 import type { Issue } from "../types/issue.ts";
 
@@ -38,7 +39,7 @@ function createInteractiveIssue(opts: {
   help: string;
   wcagCriterion: string;
 }): Issue {
-  const hash = Bun.hash(opts.url + opts.selector + opts.rule).toString(16).slice(0, 8);
+  const hash = createHash("md5").update(opts.url + opts.selector + opts.rule).digest("hex").slice(0, 8);
   return {
     id: `interactive-${opts.rule}-${hash}`,
     url: opts.url,

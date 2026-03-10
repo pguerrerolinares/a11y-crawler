@@ -1,11 +1,11 @@
-import { SQL } from "bun";
+import postgres from "postgres";
 
-let db: InstanceType<typeof SQL>;
+let db: ReturnType<typeof postgres>;
 
 export function initWorkerDb(): void {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is required");
-  db = new SQL(url);
+  db = postgres(url);
 }
 
 export function getWorkerDb() {
@@ -70,7 +70,7 @@ export async function emitAuditEvent(
 ): Promise<void> {
   await db`
     INSERT INTO audit_events (audit_id, event_type, data)
-    VALUES (${auditId}, ${eventType}, ${JSON.stringify(data)})
+    VALUES (${auditId}, ${eventType}, ${db.json(data)})
   `;
 }
 
@@ -88,9 +88,9 @@ export async function markAuditCompleted(
     UPDATE audits
     SET status = 'completed',
         finished_at = now(),
-        summary = ${JSON.stringify(summary)},
-        discovery = ${JSON.stringify(discovery)},
-        llm_usage = ${JSON.stringify(llmUsage)},
+        summary = ${db.json(summary)},
+        discovery = ${db.json(discovery)},
+        llm_usage = ${db.json(llmUsage)},
         duration_seconds = ${durationSeconds}
     WHERE id = ${auditId}
   `;
@@ -127,7 +127,7 @@ export async function insertPage(
       ${page.url},
       ${page.title},
       ${page.issueCount},
-      ${JSON.stringify(page.issuesByImpact)},
+      ${db.json(page.issuesByImpact)},
       ${page.durationMs}
     )
     RETURNING id
@@ -171,7 +171,7 @@ export async function insertIssues(
         VALUES (
           ${auditId}, ${pageId}, ${issue.rule}, ${issue.impact},
           ${issue.description}, ${issue.help}, ${issue.helpUrl},
-          ${JSON.stringify(issue.wcagTags)}, ${issue.selector}, ${issue.html},
+          ${db.json(issue.wcagTags)}, ${issue.selector}, ${issue.html},
           ${issue.xpath}, ${issue.checkSource}, ${issue.category},
           ${issue.suggestedFix}, ${issue.fixConfidence}
         )
@@ -206,7 +206,7 @@ export async function insertSharedIssues(
         )
         VALUES (
           ${auditId}, ${si.rule}, ${si.impact}, ${si.normalizedHtml},
-          ${si.pageCount}, ${JSON.stringify(si.pageUrls)},
+          ${si.pageCount}, ${db.json(si.pageUrls)},
           ${si.suggestedFix}, ${si.category}
         )
       `;

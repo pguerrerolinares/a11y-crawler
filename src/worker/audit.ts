@@ -93,7 +93,8 @@ export async function runAudit(
   let url: string | null;
 
   while ((url = queue.next()) !== null) {
-    const page = await browser.newPage();
+    const context = await browser.newContext();
+    const page = await context.newPage();
     const pageStart = Date.now();
 
     try {
@@ -228,7 +229,7 @@ export async function runAudit(
       await emitAuditEvent(auditId, "error", { url, message });
 
     } finally {
-      await page.close();
+      await context.close();
     }
   }
 

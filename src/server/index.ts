@@ -22,6 +22,7 @@ const STATIC_ROOT = resolve(import.meta.dir, "../../dist/frontend");
 
 Bun.serve({
   port: env.PORT,
+  idleTimeout: 255, // max — SSE connections are long-lived
 
   async fetch(req, server) {
     const start = Date.now();
