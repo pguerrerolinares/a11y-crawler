@@ -93,7 +93,14 @@ export async function runAudit(
   let url: string | null;
 
   while ((url = queue.next()) !== null) {
-    const context = await browser.newContext();
+    const context = await browser.newContext({
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      viewport: { width: 1280, height: 720 },
+      locale: "en-US",
+      extraHTTPHeaders: {
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
     const page = await context.newPage();
     const pageStart = Date.now();
 
