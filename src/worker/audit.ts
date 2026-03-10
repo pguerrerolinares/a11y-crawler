@@ -50,7 +50,7 @@ const DEFAULT_AUDIT_CONFIG: Omit<AuditConfig, "baseUrl" | "apiKey"> = {
 };
 
 export async function runAudit(
-  browser: Browser,
+  getBrowser: () => Promise<Browser>,
   auditId: string,
   userConfig: Partial<AuditConfig> & { baseUrl: string },
 ): Promise<void> {
@@ -93,6 +93,16 @@ export async function runAudit(
   let url: string | null;
 
   while ((url = queue.next()) !== null) {
+    let browser: Browser;
+    try {
+      browser = await getBrowser();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      errors.push({ url, phase: "browser", message, timestamp: new Date().toISOString() });
+      console.error(`  Failed to get browser for ${url}: ${message}`);
+      continue;
+    }
+
     const context = await browser.newContext({
       userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
       viewport: { width: 1280, height: 720 },
