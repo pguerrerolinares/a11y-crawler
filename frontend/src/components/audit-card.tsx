@@ -39,7 +39,7 @@ export function AuditCard({ audit }: AuditCardProps) {
             <span className="truncate">{audit.url}</span>
           </CardTitle>
         </CardHeader>
-        {audit.summary && (
+        {audit.summary?.totalPages != null && (
           <CardContent className="pt-0">
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <span>{audit.summary.totalPages} pages</span>

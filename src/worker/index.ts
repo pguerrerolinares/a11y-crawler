@@ -4,14 +4,22 @@ import { runAudit } from "./audit.ts";
 import type { Browser } from "playwright";
 
 const POLL_INTERVAL_MS = 5000;
-const BROWSERLESS_URL = process.env.BROWSERLESS_URL || "ws://browserless:3000/chromium/playwright";
+const BROWSERLESS_URL = process.env.BROWSERLESS_URL;
 const MAX_RETRIES = 5;
 
-async function connectWithRetry(url: string): Promise<Browser> {
+async function launchBrowser(): Promise<Browser> {
+  if (!BROWSERLESS_URL) {
+    // Local dev: launch Chromium directly
+    const browser = await chromium.launch({ headless: true });
+    console.log("Launched local Chromium");
+    return browser;
+  }
+
+  // Production: connect to Browserless with retry
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const browser = await chromium.connect(url);
-      console.log(`Connected to Browserless at ${url}`);
+      const browser = await chromium.connect(BROWSERLESS_URL);
+      console.log(`Connected to Browserless at ${BROWSERLESS_URL}`);
       return browser;
     } catch (err) {
       const waitMs = Math.pow(2, attempt) * 1000;
@@ -21,11 +29,11 @@ async function connectWithRetry(url: string): Promise<Browser> {
       );
       if (attempt < MAX_RETRIES - 1) {
         console.log(`Retrying in ${waitMs}ms...`);
-        await Bun.sleep(waitMs);
+        await new Promise(r => setTimeout(r, waitMs));
       }
     }
   }
-  throw new Error(`Failed to connect to Browserless at ${url} after ${MAX_RETRIES} attempts`);
+  throw new Error(`Failed to connect to Browserless at ${BROWSERLESS_URL} after ${MAX_RETRIES} attempts`);
 }
 
 async function main() {
@@ -35,16 +43,16 @@ async function main() {
   initWorkerDb();
   console.log("Database connected");
 
-  // Connect to Browserless
-  let browser = await connectWithRetry(BROWSERLESS_URL);
+  // Launch browser (local Chromium or remote Browserless)
+  let browser = await launchBrowser();
 
   // Reconnect on disconnect
   browser.on("disconnected", async () => {
-    console.warn("Browserless disconnected, reconnecting...");
+    console.warn("Browser disconnected, reconnecting...");
     try {
-      browser = await connectWithRetry(BROWSERLESS_URL);
+      browser = await launchBrowser();
     } catch (err) {
-      console.error("Failed to reconnect to Browserless:", err);
+      console.error("Failed to reconnect browser:", err);
       process.exit(1);
     }
   });
@@ -67,7 +75,7 @@ async function main() {
       const audit = await claimNextAudit();
 
       if (!audit) {
-        await Bun.sleep(POLL_INTERVAL_MS);
+        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
         continue;
       }
 
@@ -89,7 +97,7 @@ async function main() {
     } catch (err) {
       // DB polling error — log and continue
       console.error("Worker loop error:", err instanceof Error ? err.message : err);
-      await Bun.sleep(POLL_INTERVAL_MS);
+      await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
     }
   }
 
