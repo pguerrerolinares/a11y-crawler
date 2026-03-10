@@ -84,7 +84,14 @@ async function main() {
       console.log(`${"=".repeat(60)}\n`);
 
       try {
-        await runAudit(browser, audit.id, {
+        const getBrowser = async () => {
+          if (!browser.isConnected()) {
+            console.warn("Browser not connected, reconnecting...");
+            browser = await launchBrowser();
+          }
+          return browser;
+        };
+        await runAudit(getBrowser, audit.id, {
           baseUrl: audit.url,
           ...audit.config,
         });
