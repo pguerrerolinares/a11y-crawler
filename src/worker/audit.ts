@@ -61,7 +61,18 @@ export async function runAudit(
   };
 
   const startTime = Date.now();
-  const baseOrigin = new URL(config.baseUrl).origin;
+
+  // Resolve redirects to get the final origin (e.g. finnk.com → www.finnk.com)
+  let resolvedBaseUrl = config.baseUrl;
+  try {
+    const res = await fetch(config.baseUrl, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(10000) });
+    resolvedBaseUrl = res.url;
+    if (resolvedBaseUrl !== config.baseUrl) {
+      console.log(`Base URL resolved: ${config.baseUrl} → ${resolvedBaseUrl}`);
+    }
+  } catch {}
+  const baseOrigin = new URL(resolvedBaseUrl).origin;
+
   const queue = new UrlQueue(config.maxPages, config.maxDepth);
   const pages: PageResult[] = [];
   const errors: CrawlError[] = [];
@@ -78,14 +89,17 @@ export async function runAudit(
   let lastNavRepr: string | null = null;
   let cachedNavTargets: NavTarget[] = [];
 
-  // Phase 1: Seed URLs
-  queue.seed([config.baseUrl], "link", 0);
+  // Phase 1: Seed URLs (use resolved URL to avoid duplicates)
+  queue.seed([resolvedBaseUrl], "link", 0);
 
   if (!config.skipSitemap) {
     console.log("=== Sitemap Discovery ===");
-    const sitemapUrls = await discoverSitemapUrls(config.baseUrl);
-    console.log(`Found ${sitemapUrls.length} URLs from sitemap`);
-    queue.seed(sitemapUrls.slice(0, Math.ceil(config.maxPages / 2)), "sitemap", 1);
+    const sitemapUrls = await discoverSitemapUrls(resolvedBaseUrl);
+    const sameOriginSitemapUrls = sitemapUrls.filter(u => {
+      try { return new URL(u).origin === baseOrigin; } catch { return false; }
+    });
+    console.log(`Found ${sitemapUrls.length} URLs from sitemap (${sameOriginSitemapUrls.length} same-origin)`);
+    queue.seed(sameOriginSitemapUrls.slice(0, Math.ceil(config.maxPages / 2)), "sitemap", 1);
   }
 
   // Phase 2: Process pages
@@ -123,6 +137,9 @@ export async function runAudit(
       } catch {
         // Timeout acceptable
       }
+
+      // Step 1b: Dismiss cookie consent banners
+      await dismissCookieBanner(page);
 
       // Debug: DOM size after navigation
       const domSize = await page.evaluate(() => document.body?.innerHTML.length ?? 0);
@@ -336,4 +353,41 @@ export async function runAudit(
   console.log("\n=== LLM Usage ===");
   console.log(`Nav discovery (${config.navModel}): ${u.totalCalls} calls | ${u.totalInputTokens} in | ${u.totalOutputTokens} out`);
   console.log(`Audit ${auditId} completed: ${pages.length} pages, ${allIssues.length} issues in ${totalDuration}s`);
+}
+
+/**
+ * Dismiss common cookie consent banners (CookieBot, OneTrust, etc.).
+ * Best-effort — failures are silently ignored.
+ */
+async function dismissCookieBanner(page: import("playwright").Page): Promise<void> {
+  const selectors = [
+    // CookieBot
+    "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
+    "#CybotCookiebotDialogBodyButtonAccept",
+    // OneTrust
+    "#onetrust-accept-btn-handler",
+    // Cookie Notice / generic
+    '[data-cookieconsent="accept"]',
+    'button[aria-label*="cookie" i][aria-label*="accept" i]',
+    'button[aria-label*="Accept" i]',
+    '.cookie-accept',
+    '.cc-accept',
+    '.cc-btn.cc-dismiss',
+    // GDPR generic
+    'button:has-text("Accept all")',
+    'button:has-text("Aceptar todo")',
+    'button:has-text("Aceptar")',
+    'button:has-text("Accept")',
+  ];
+
+  for (const sel of selectors) {
+    try {
+      const btn = page.locator(sel).first();
+      if (await btn.isVisible({ timeout: 500 })) {
+        await btn.click({ timeout: 1000 });
+        await page.waitForTimeout(300);
+        return;
+      }
+    } catch {}
+  }
 }
