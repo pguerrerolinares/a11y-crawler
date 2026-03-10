@@ -11,11 +11,10 @@ interface ProgressViewProps {
 export function ProgressView({ auditId }: ProgressViewProps) {
   const { events, isConnected } = useAuditWebSocket(auditId, true);
 
-  const progressEvents = events.filter((e) => e.type === "progress");
   const pageEvents = events.filter((e) => e.type === "page_analyzed");
-  const latest = progressEvents[progressEvents.length - 1]?.data;
+  const latest = pageEvents[pageEvents.length - 1]?.data;
 
-  const pagesAnalyzed = (latest?.pagesAnalyzed as number) ?? 0;
+  const pagesAnalyzed = (latest?.pagesAnalyzed as number) ?? pageEvents.length;
   const totalDiscovered = (latest?.totalDiscovered as number) ?? 0;
   const elapsed = (latest?.elapsedSeconds as number) ?? 0;
   const progressPct = totalDiscovered > 0 ? Math.min((pagesAnalyzed / totalDiscovered) * 100, 100) : 0;
