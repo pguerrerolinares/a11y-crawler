@@ -275,7 +275,7 @@ export default function Reports() {
               </div>
 
               {filteredAudits.length > limit && (
-                <div className="px-4 py-3 border-t">
+                <div className="flex items-center justify-end px-4 py-3 border-t">
                   <Pagination total={filteredAudits.length} limit={limit} offset={offset} onChange={setOffset} />
                 </div>
               )}
