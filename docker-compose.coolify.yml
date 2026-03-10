@@ -68,8 +68,8 @@ services:
       - coolify
     environment:
       - MAX_CONCURRENT_SESSIONS=2
-      - CONNECTION_TIMEOUT=120000
-      - TIMEOUT=120000
+      - CONNECTION_TIMEOUT=600000
+      - TIMEOUT=600000
       - HEALTH=true
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/json/version"]
