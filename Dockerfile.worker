@@ -1,17 +1,22 @@
 # Dockerfile.worker — Audit Worker (Playwright client, NO Chromium)
-# Install with Bun, run with Node (Bun WebSocket incompatible with Playwright connect)
+# Bundle with esbuild (keepNames=false to avoid __name in page.evaluate),
+# run with Node (Bun WebSocket incompatible with Playwright connect).
 
-FROM oven/bun:1 AS deps
+FROM oven/bun:1 AS build
 WORKDIR /app
 COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile --production
+RUN bun install --frozen-lockfile
+COPY src/ src/
+COPY tsconfig.json ./
+RUN bunx esbuild src/worker/index.ts --bundle --platform=node --format=esm \
+    --outfile=dist/worker.mjs --keep-names=false \
+    --external:playwright --external:@axe-core/playwright --external:postgres
 
 FROM node:22-slim
 WORKDIR /app
-COPY --from=deps /app/node_modules node_modules/
-COPY package.json tsconfig.json ./
-COPY src/ src/
+COPY --from=build /app/node_modules node_modules/
+COPY --from=build /app/dist/worker.mjs ./
 
 ENV NODE_ENV=production
 
-CMD ["npx", "tsx", "src/worker/index.ts"]
+CMD ["node", "worker.mjs"]
