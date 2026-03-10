@@ -1,1 +1,1 @@
-export { audit } from "./orchestrator.ts";
+export { runAudit } from "./worker/audit.ts";

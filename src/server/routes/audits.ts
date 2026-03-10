@@ -1,7 +1,7 @@
 import { getDb } from "../db/client.ts";
 import { CreateAuditSchema, PaginationSchema } from "../types.ts";
 import type { AuditResponse } from "../types.ts";
-import { startCrawl } from "../jobs/manager.ts";
+
 
 export async function handleAudits(req: Request, url: URL): Promise<Response> {
   const method = req.method;
@@ -43,13 +43,7 @@ async function createAudit(req: Request): Promise<Response> {
     RETURNING id, url, status, created_at
   `;
 
-  try {
-    startCrawl(audit.id, auditUrl, config);
-  } catch (err) {
-    await db`UPDATE audits SET status = 'failed', error = ${(err as Error).message} WHERE id = ${audit.id}`;
-    return Response.json({ error: (err as Error).message }, { status: 429 });
-  }
-
+  // Worker will pick up the pending audit from the queue
   return Response.json({
     id: audit.id,
     url: audit.url,

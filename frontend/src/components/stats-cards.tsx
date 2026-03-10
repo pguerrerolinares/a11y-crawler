@@ -11,7 +11,7 @@ interface StatsCardsProps {
 }
 
 export function StatsCards({ summary }: StatsCardsProps) {
-  const { totalIssues, totalPages, issuesByImpact } = summary;
+  const { totalIssues = 0, totalPages = 0, issuesByImpact = {} } = summary ?? {};
 
   const critical = issuesByImpact["critical"] ?? 0;
   const warnings = (issuesByImpact["moderate"] ?? 0) + (issuesByImpact["minor"] ?? 0);

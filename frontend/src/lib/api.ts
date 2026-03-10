@@ -17,7 +17,7 @@ export interface AuditResponse {
   startedAt: string | null;
   finishedAt: string | null;
   error: string | null;
-  summary: { totalIssues: number; totalPages: number; issuesByImpact: Record<string, number> } | null;
+  summary: { totalIssues?: number; totalPages?: number; issuesByImpact?: Record<string, number> } | null;
   discovery: Record<string, unknown> | null;
   llmUsage: Record<string, unknown> | null;
 }
