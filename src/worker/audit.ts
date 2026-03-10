@@ -62,7 +62,7 @@ export async function runAudit(
 
   const startTime = Date.now();
   const baseOrigin = new URL(config.baseUrl).origin;
-  const queue = new UrlQueue(config.maxPages);
+  const queue = new UrlQueue(config.maxPages, config.maxDepth);
   const pages: PageResult[] = [];
   const errors: CrawlError[] = [];
 
@@ -79,13 +79,13 @@ export async function runAudit(
   let cachedNavTargets: NavTarget[] = [];
 
   // Phase 1: Seed URLs
-  queue.seed([config.baseUrl], "link");
+  queue.seed([config.baseUrl], "link", 0);
 
   if (!config.skipSitemap) {
     console.log("=== Sitemap Discovery ===");
     const sitemapUrls = await discoverSitemapUrls(config.baseUrl);
     console.log(`Found ${sitemapUrls.length} URLs from sitemap`);
-    queue.seed(sitemapUrls.slice(0, Math.ceil(config.maxPages / 2)), "sitemap");
+    queue.seed(sitemapUrls.slice(0, Math.ceil(config.maxPages / 2)), "sitemap", 1);
   }
 
   // Phase 2: Process pages
@@ -140,11 +140,12 @@ export async function runAudit(
       }
 
       // Step 6: Link extraction + interactions
+      const currentDepth = queue.getDepth(url);
       const staticLinks = await extractLinks(page, baseOrigin);
-      queue.seed(staticLinks, "link");
+      queue.seed(staticLinks, "link", currentDepth + 1);
 
       const interactionUrls = await interactWithTargets(page, navTargets, config, baseOrigin);
-      queue.seed(interactionUrls, "interaction");
+      queue.seed(interactionUrls, "interaction", currentDepth + 1);
 
       // Build page result
       const allIssues = [...axeIssues, ...interactiveIssues];

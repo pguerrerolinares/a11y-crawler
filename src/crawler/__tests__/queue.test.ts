@@ -69,4 +69,23 @@ describe("UrlQueue", () => {
     expect(stats.totalVisited).toBe(1);
     expect(stats.pendingCount).toBe(1);
   });
+
+  test("respects maxDepth limit", () => {
+    const shallow = new UrlQueue(10, 1);
+    shallow.seed(["https://example.com/"], "link", 0);
+    expect(shallow.next()).toBe("https://example.com/");
+    // Child URLs at depth 1 should be allowed
+    shallow.seed(["https://example.com/a"], "link", 1);
+    expect(shallow.next()).toBe("https://example.com/a");
+    // Grandchild URLs at depth 2 should be rejected
+    shallow.seed(["https://example.com/a/b"], "link", 2);
+    expect(shallow.next()).toBeNull();
+  });
+
+  test("getDepth returns correct depth for seeded URLs", () => {
+    queue.seed(["https://example.com/"], "link", 0);
+    queue.seed(["https://example.com/a"], "link", 1);
+    expect(queue.getDepth("https://example.com/")).toBe(0);
+    expect(queue.getDepth("https://example.com/a")).toBe(1);
+  });
 });

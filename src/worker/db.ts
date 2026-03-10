@@ -159,22 +159,25 @@ export async function insertIssues(
 ): Promise<void> {
   if (issues.length === 0) return;
 
-  for (const issue of issues) {
-    await db`
-      INSERT INTO issues (
-        audit_id, page_id, rule, impact, description, help, help_url,
-        wcag_tags, selector, html, xpath, check_source, category,
-        suggested_fix, fix_confidence
-      )
-      VALUES (
-        ${auditId}, ${pageId}, ${issue.rule}, ${issue.impact},
-        ${issue.description}, ${issue.help}, ${issue.helpUrl},
-        ${JSON.stringify(issue.wcagTags)}, ${issue.selector}, ${issue.html},
-        ${issue.xpath}, ${issue.checkSource}, ${issue.category},
-        ${issue.suggestedFix}, ${issue.fixConfidence}
-      )
-    `;
-  }
+  // Batch insert in a single transaction
+  await db.begin(async (tx) => {
+    for (const issue of issues) {
+      await tx`
+        INSERT INTO issues (
+          audit_id, page_id, rule, impact, description, help, help_url,
+          wcag_tags, selector, html, xpath, check_source, category,
+          suggested_fix, fix_confidence
+        )
+        VALUES (
+          ${auditId}, ${pageId}, ${issue.rule}, ${issue.impact},
+          ${issue.description}, ${issue.help}, ${issue.helpUrl},
+          ${JSON.stringify(issue.wcagTags)}, ${issue.selector}, ${issue.html},
+          ${issue.xpath}, ${issue.checkSource}, ${issue.category},
+          ${issue.suggestedFix}, ${issue.fixConfidence}
+        )
+      `;
+    }
+  });
 }
 
 /**
@@ -192,17 +195,21 @@ export async function insertSharedIssues(
     category: string;
   }>,
 ): Promise<void> {
-  for (const si of sharedIssues) {
-    await db`
-      INSERT INTO shared_issues (
-        audit_id, rule, impact, normalized_html, page_count,
-        page_urls, suggested_fix, category
-      )
-      VALUES (
-        ${auditId}, ${si.rule}, ${si.impact}, ${si.normalizedHtml},
-        ${si.pageCount}, ${JSON.stringify(si.pageUrls)},
-        ${si.suggestedFix}, ${si.category}
-      )
-    `;
-  }
+  if (sharedIssues.length === 0) return;
+
+  await db.begin(async (tx) => {
+    for (const si of sharedIssues) {
+      await tx`
+        INSERT INTO shared_issues (
+          audit_id, rule, impact, normalized_html, page_count,
+          page_urls, suggested_fix, category
+        )
+        VALUES (
+          ${auditId}, ${si.rule}, ${si.impact}, ${si.normalizedHtml},
+          ${si.pageCount}, ${JSON.stringify(si.pageUrls)},
+          ${si.suggestedFix}, ${si.category}
+        )
+      `;
+    }
+  });
 }
