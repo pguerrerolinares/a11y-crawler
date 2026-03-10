@@ -4,9 +4,9 @@ import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
 interface StatsCardsProps {
   summary: {
-    totalIssues: number;
-    totalPages: number;
-    issuesByImpact: Record<string, number>;
+    totalIssues?: number;
+    totalPages?: number;
+    issuesByImpact?: Record<string, number>;
   };
 }
 

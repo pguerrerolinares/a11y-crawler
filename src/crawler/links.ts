@@ -10,7 +10,7 @@ export async function extractLinks(page: Page, baseOrigin: string): Promise<stri
     anchors
       .map((a) => {
         try {
-          return new URL(a.href).href;
+          return new URL((a as HTMLAnchorElement).href).href;
         } catch {
           return "";
         }

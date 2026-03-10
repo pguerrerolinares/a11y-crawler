@@ -202,7 +202,7 @@ export default function Reports() {
                           {dateFormatter.format(new Date(audit.createdAt))}
                         </TableCell>
                         <TableCell className="text-center tabular-nums text-sm font-medium">
-                          {audit.summary ? Math.max(0, Math.min(100, Math.round(100 - (audit.summary.totalIssues / Math.max(1, audit.summary.totalPages)) * 10))) : "—"}
+                          {audit.summary?.totalIssues != null ? Math.max(0, Math.min(100, Math.round(100 - ((audit.summary.totalIssues ?? 0) / Math.max(1, audit.summary.totalPages ?? 1)) * 10))) : "—"}
                         </TableCell>
                         <TableCell className="text-center tabular-nums">
                           {audit.summary?.issuesByImpact?.critical != null ? (

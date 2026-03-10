@@ -1,6 +1,8 @@
-import postgres from "postgres";
+import postgres, { type JSONValue } from "postgres";
 
 let db: ReturnType<typeof postgres>;
+
+const json = (value: unknown) => db.json(value as JSONValue);
 
 export function initWorkerDb(): void {
   const url = process.env.DATABASE_URL;
@@ -70,7 +72,7 @@ export async function emitAuditEvent(
 ): Promise<void> {
   await db`
     INSERT INTO audit_events (audit_id, event_type, data)
-    VALUES (${auditId}, ${eventType}, ${db.json(data)})
+    VALUES (${auditId}, ${eventType}, ${json(data)})
   `;
 }
 
@@ -88,9 +90,9 @@ export async function markAuditCompleted(
     UPDATE audits
     SET status = 'completed',
         finished_at = now(),
-        summary = ${db.json(summary)},
-        discovery = ${db.json(discovery)},
-        llm_usage = ${db.json(llmUsage)},
+        summary = ${json(summary)},
+        discovery = ${json(discovery)},
+        llm_usage = ${json(llmUsage)},
         duration_seconds = ${durationSeconds}
     WHERE id = ${auditId}
   `;
@@ -127,7 +129,7 @@ export async function insertPage(
       ${page.url},
       ${page.title},
       ${page.issueCount},
-      ${db.json(page.issuesByImpact)},
+      ${json(page.issuesByImpact)},
       ${page.durationMs}
     )
     RETURNING id
@@ -160,7 +162,7 @@ export async function insertIssues(
   if (issues.length === 0) return;
 
   // Batch insert in a single transaction
-  await db.begin(async (tx) => {
+  await db.begin(async (tx: any) => {
     for (const issue of issues) {
       await tx`
         INSERT INTO issues (
@@ -171,7 +173,7 @@ export async function insertIssues(
         VALUES (
           ${auditId}, ${pageId}, ${issue.rule}, ${issue.impact},
           ${issue.description}, ${issue.help}, ${issue.helpUrl},
-          ${db.json(issue.wcagTags)}, ${issue.selector}, ${issue.html},
+          ${json(issue.wcagTags)}, ${issue.selector}, ${issue.html},
           ${issue.xpath}, ${issue.checkSource}, ${issue.category},
           ${issue.suggestedFix}, ${issue.fixConfidence}
         )
@@ -197,7 +199,7 @@ export async function insertSharedIssues(
 ): Promise<void> {
   if (sharedIssues.length === 0) return;
 
-  await db.begin(async (tx) => {
+  await db.begin(async (tx: any) => {
     for (const si of sharedIssues) {
       await tx`
         INSERT INTO shared_issues (
@@ -206,7 +208,7 @@ export async function insertSharedIssues(
         )
         VALUES (
           ${auditId}, ${si.rule}, ${si.impact}, ${si.normalizedHtml},
-          ${si.pageCount}, ${db.json(si.pageUrls)},
+          ${si.pageCount}, ${json(si.pageUrls)},
           ${si.suggestedFix}, ${si.category}
         )
       `;
