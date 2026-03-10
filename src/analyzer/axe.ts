@@ -23,6 +23,11 @@ export async function runAxe(
   const title = await page.title();
   const url = page.url();
 
+  // Debug: log axe result summary
+  const incompleteRules = results.incomplete.map(r => `${r.id}(${r.nodes.length})`).join(", ");
+  const violationRules = results.violations.map(r => `${r.id}(${r.nodes.length})`).join(", ");
+  console.log(`  axe: ${results.violations.length} violations [${violationRules}], ${results.incomplete.length} incomplete [${incompleteRules}], ${results.passes.length} passes`);
+
   return results.violations.flatMap((v) =>
     v.nodes.map((node) => {
       const parentHtml = node.html;
