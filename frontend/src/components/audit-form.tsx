@@ -52,6 +52,7 @@ export function AuditFormDialog() {
       setError("Please enter a valid URL");
       return;
     }
+    console.log("[AuditForm] submitting:", JSON.stringify(form));
     mutation.mutate(form);
   };
 
