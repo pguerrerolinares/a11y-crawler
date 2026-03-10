@@ -107,6 +107,11 @@ export async function runAudit(
         // Timeout acceptable
       }
 
+      // Debug: DOM size after navigation
+      const domSize = await page.evaluate(() => document.body?.innerHTML.length ?? 0);
+      const pageTitle = await page.title();
+      console.log(`  DOM size: ${domSize} chars, title: "${pageTitle}"`);
+
       // Step 2: Axe-core
       let axeIssues: Issue[] = [];
       try {
