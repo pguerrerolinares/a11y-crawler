@@ -68,7 +68,7 @@ export default function AuditDetail() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-1.5">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/reports")} className="gap-1.5">
             <ArrowLeft className="h-4 w-4" />
             <span className="hidden sm:inline text-sm">Audits</span>
           </Button>

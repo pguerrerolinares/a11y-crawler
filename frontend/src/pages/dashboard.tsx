@@ -13,12 +13,14 @@ import { ShieldCheck, AlertTriangle, Loader2, X, Download } from "lucide-react";
 
 export default function Dashboard() {
   const [scanUrl, setScanUrl] = useState("");
+  const [maxDepth, setMaxDepth] = useState(3);
+  const [maxPages, setMaxPages] = useState(30);
   const [currentAuditId, setCurrentAuditId] = useState<string | null>(null);
 
   useEffect(() => { document.title = "Scanner — a11y Crawler"; }, []);
 
   const { mutate: startScan, isPending: isScanning, error: scanError, reset: resetScan } = useMutation({
-    mutationFn: (url: string) => api.audits.create({ url }),
+    mutationFn: (url: string) => api.audits.create({ url, maxPages, maxDepth }),
     onSuccess: (audit) => {
       setCurrentAuditId(audit.id);
     },
@@ -97,11 +99,11 @@ export default function Dashboard() {
           <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground">
             <label className="flex items-center gap-1.5">
               Max depth:
-              <Input type="number" min={1} max={10} defaultValue={3} className="w-16 h-7 text-xs" />
+              <Input type="number" min={1} max={10} value={maxDepth} onChange={e => setMaxDepth(Number(e.target.value))} className="w-16 h-7 text-xs" />
             </label>
             <label className="flex items-center gap-1.5">
               Max pages:
-              <Input type="number" min={1} max={500} defaultValue={50} className="w-20 h-7 text-xs" />
+              <Input type="number" min={1} max={50} value={maxPages} onChange={e => setMaxPages(Number(e.target.value))} className="w-20 h-7 text-xs" />
             </label>
           </div>
         )}
