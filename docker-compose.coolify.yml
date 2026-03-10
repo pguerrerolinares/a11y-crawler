@@ -1,12 +1,13 @@
-# docker-compose.coolify.yml — Coolify deployment
+# docker-compose.coolify.yml — Coolify deployment (v3 architecture)
+# 3 services: API server, Worker, Browserless (Chromium pool)
 # Coolify's Traefik handles SSL + domain routing + basic auth.
 # Reuses PostgreSQL from ai-news-platform via shared coolify network.
 
 services:
-  app:
+  api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.api
     restart: unless-stopped
     expose:
       - "3000"
@@ -14,8 +15,6 @@ services:
       - coolify
     environment:
       - DATABASE_URL=${DATABASE_URL}
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_API_BASE_URL=${LLM_API_BASE_URL:-https://api.moonshot.ai/v1}
       - NODE_ENV=production
       - PORT=3000
       - REPORTS_DIR=/app/reports
@@ -40,6 +39,43 @@ services:
       interval: 30s
       timeout: 5s
       start_period: 30s
+      retries: 3
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    networks:
+      - coolify
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_API_BASE_URL=${LLM_API_BASE_URL:-https://api.moonshot.ai/v1}
+      - BROWSERLESS_URL=ws://browserless:3000/chromium/playwright
+      - REPORTS_DIR=/app/reports
+      - NODE_ENV=production
+    volumes:
+      - reports:/app/reports
+    depends_on:
+      browserless:
+        condition: service_healthy
+
+  browserless:
+    image: ghcr.io/browserless/chromium
+    restart: unless-stopped
+    networks:
+      - coolify
+    environment:
+      - MAX_CONCURRENT_SESSIONS=2
+      - CONNECTION_TIMEOUT=120000
+      - TIMEOUT=120000
+      - HEALTH=true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/json/version"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
       retries: 3
 
 networks:
