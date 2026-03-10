@@ -8,7 +8,7 @@ import { handlePages } from "./routes/pages.ts";
 import { handleIssues } from "./routes/issues.ts";
 import { handleLogs } from "./routes/logs.ts";
 import { handleExport } from "./routes/export.ts";
-import { handleWsUpgrade, wsOpen, wsClose, wsMessage, startNotifyListener } from "./ws.ts";
+import { handleSSE } from "./routes/sse.ts";
 
 const env = validateEnv();
 
@@ -18,23 +18,15 @@ console.log("Database initialized");
 mkdirSync(env.REPORTS_DIR, { recursive: true });
 console.log(`Reports directory: ${env.REPORTS_DIR}`);
 
-await startNotifyListener();
-
 const STATIC_ROOT = resolve(import.meta.dir, "../../dist/frontend");
 
 Bun.serve({
   port: env.PORT,
+  idleTimeout: 255, // max — SSE connections are long-lived
 
   async fetch(req, server) {
     const start = Date.now();
     const url = new URL(req.url);
-
-    // WebSocket upgrade
-    if (url.pathname.startsWith("/ws/")) {
-      const upgraded = handleWsUpgrade(req, server);
-      if (upgraded !== undefined) return upgraded;
-      return undefined as any;
-    }
 
     // Health check — fast, no logging
     if (url.pathname === "/health" || url.pathname === "/api/health") {
@@ -79,14 +71,14 @@ Bun.serve({
     }
   },
 
-  websocket: {
-    open: wsOpen,
-    message: wsMessage,
-    close: wsClose,
-  },
 });
 
 async function handleApiRoute(req: Request, url: URL): Promise<Response> {
+  // SSE endpoint for audit progress
+  if (url.pathname.match(/^\/api\/audits\/[^/]+\/events$/)) {
+    const sseResponse = handleSSE(req, url);
+    if (sseResponse) return sseResponse;
+  }
   // Order matters: more specific patterns first
   if (url.pathname.match(/^\/api\/audits\/[^/]+\/(pages|issues|shared)$/)) {
     if (url.pathname.endsWith("/pages")) return handlePages(req, url);

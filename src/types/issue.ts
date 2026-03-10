@@ -1,6 +1,6 @@
 export type ImpactLevel = "critical" | "serious" | "moderate" | "minor";
 
-export type CheckSource = "axe" | "llm";
+export type CheckSource = "axe" | "llm" | "interactive";
 
 export type ViolationCategory =
   | "structural"
