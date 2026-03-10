@@ -42,7 +42,7 @@ export async function interactWithTargets(
         // No navigation — scan for newly revealed links
         const newLinks = await page.$$eval("a[href]", (anchors) =>
           anchors.map((a) => {
-            try { return new URL(a.href).href; } catch { return ""; }
+            try { return new URL((a as HTMLAnchorElement).href).href; } catch { return ""; }
           }).filter(Boolean),
         );
 
