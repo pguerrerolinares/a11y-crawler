@@ -85,6 +85,8 @@ export async function markAuditCompleted(
   discovery: Record<string, unknown>,
   llmUsage: Record<string, unknown>,
   durationSeconds: number,
+  wcagScore: number | null,
+  crawlErrors: unknown[] | null,
 ): Promise<void> {
   await db`
     UPDATE audits
@@ -93,7 +95,9 @@ export async function markAuditCompleted(
         summary = ${json(summary)},
         discovery = ${json(discovery)},
         llm_usage = ${json(llmUsage)},
-        duration_seconds = ${durationSeconds}
+        duration_seconds = ${durationSeconds},
+        wcag_score = ${wcagScore},
+        crawl_errors = ${crawlErrors ? json(crawlErrors) : null}
     WHERE id = ${auditId}
   `;
 }
