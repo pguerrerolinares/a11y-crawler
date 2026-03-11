@@ -1,7 +1,7 @@
 import { getDb } from "../db/client.ts";
 import { LogFilterSchema } from "../types.ts";
 
-function mapLogSummary(row: any) {
+function mapLogSummary(row: Record<string, unknown>) {
   return {
     id: row.id,
     method: row.method,
@@ -18,7 +18,7 @@ function mapLogSummary(row: any) {
   };
 }
 
-function mapLogRow(row: any) {
+function mapLogRow(row: Record<string, unknown>) {
   return {
     id: row.id,
     method: row.method,
@@ -61,7 +61,7 @@ export async function handleLogs(req: Request, url: URL): Promise<Response> {
   const { limit, offset, path, method, status, ip, from, to, params: paramsSearch, reqBody, resBody } = parsed.data;
 
   const conditions: string[] = [];
-  const values: any[] = [];
+  const values: (string | number)[] = [];
   let paramIdx = 1;
 
   // Permanent noise filter — never show /api/logs* entries

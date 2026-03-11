@@ -66,9 +66,9 @@ async function exportCsv(auditId: string): Promise<Response> {
           if (issues.length === 0) break;
 
           // Resolve page URLs in batch
-          const pageIds = [...new Set(issues.map((i: any) => i.page_id))];
+          const pageIds = [...new Set(issues.map((i: Record<string, unknown>) => i.page_id as string))];
           const pages = await db`SELECT id, url FROM pages WHERE id IN ${db(pageIds)}`;
-          const pageUrlMap = new Map(pages.map((p: any) => [p.id, p.url]));
+          const pageUrlMap = new Map(pages.map((p: Record<string, unknown>) => [p.id as string, p.url as string]));
 
           for (const issue of issues) {
             const row = [

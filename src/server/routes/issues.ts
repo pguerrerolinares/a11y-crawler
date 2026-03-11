@@ -26,7 +26,7 @@ async function listIssues(filterCol: "audit_id" | "page_id", filterVal: string, 
   const { limit, offset, impact, rule, category } = IssueFilterSchema.parse(params);
 
   const conditions = [`${filterCol} = $1`];
-  const values: any[] = [filterVal];
+  const values: (string | number)[] = [filterVal];
   let paramIdx = 2;
 
   if (impact) {
@@ -64,7 +64,7 @@ async function listSharedIssues(auditId: string): Promise<Response> {
   const db = getDb();
   const issues = await db`SELECT * FROM shared_issues WHERE audit_id = ${auditId} ORDER BY page_count DESC`;
   return Response.json({
-    data: issues.map((row: any) => ({
+    data: issues.map((row: Record<string, unknown>) => ({
       rule: row.rule,
       impact: row.impact,
       normalizedHtml: row.normalized_html,
@@ -75,7 +75,7 @@ async function listSharedIssues(auditId: string): Promise<Response> {
   });
 }
 
-function mapIssueRow(row: any): IssueResponse {
+function mapIssueRow(row: Record<string, unknown>): IssueResponse {
   return {
     id: row.id,
     pageId: row.page_id,

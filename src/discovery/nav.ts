@@ -60,7 +60,7 @@ export function parseNavTargets(response: string): NavTarget[] {
   if (!Array.isArray(parsed)) return [];
   return parsed
     .filter(
-      (t: any) =>
+      (t: Record<string, unknown>) =>
         t.selector &&
         t.description &&
         t.expectedBehavior &&
@@ -68,7 +68,7 @@ export function parseNavTargets(response: string): NavTarget[] {
         t.confidence >= 0.5,
     )
     .slice(0, 10)
-    .map((t: any) => ({
+    .map((t: Record<string, unknown>) => ({
       selector: String(t.selector).startsWith("link:")
         ? String(t.selector).replace(/^link:/, "a:")
         : String(t.selector),

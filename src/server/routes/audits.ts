@@ -97,7 +97,7 @@ async function deleteAudit(id: string): Promise<Response> {
   return new Response(null, { status: 204 });
 }
 
-function mapAuditRow(row: any): AuditResponse {
+function mapAuditRow(row: Record<string, unknown>): AuditResponse {
   return {
     id: row.id,
     url: row.url,
