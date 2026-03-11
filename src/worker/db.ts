@@ -166,7 +166,7 @@ export async function insertIssues(
   if (issues.length === 0) return;
 
   // Batch insert in a single transaction
-  await db.begin(async (tx: any) => {
+  await db.begin(async (tx: ReturnType<typeof postgres>) => {
     for (const issue of issues) {
       await tx`
         INSERT INTO issues (
@@ -203,7 +203,7 @@ export async function insertSharedIssues(
 ): Promise<void> {
   if (sharedIssues.length === 0) return;
 
-  await db.begin(async (tx: any) => {
+  await db.begin(async (tx: ReturnType<typeof postgres>) => {
     for (const si of sharedIssues) {
       await tx`
         INSERT INTO shared_issues (

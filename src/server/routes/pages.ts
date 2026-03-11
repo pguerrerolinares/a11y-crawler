@@ -38,7 +38,7 @@ async function getPage(id: string): Promise<Response> {
   return Response.json(mapPageRow(page));
 }
 
-function mapPageRow(row: any): PageResponse {
+function mapPageRow(row: Record<string, unknown>): PageResponse {
   return {
     id: row.id,
     auditId: row.audit_id,
