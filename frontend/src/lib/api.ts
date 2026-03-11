@@ -49,6 +49,7 @@ export interface IssueResponse {
   html: string | null;
   category: string | null;
   suggestedFix: string | null;
+  checkSource: "axe" | "interactive" | "llm";
   createdAt: string;
 }
 

@@ -15,6 +15,18 @@ const impactColors: Record<string, string> = {
   minor: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
 };
 
+const sourceColors: Record<string, string> = {
+  axe: "bg-purple-500/15 text-purple-700 dark:text-purple-400",
+  interactive: "bg-teal-500/15 text-teal-700 dark:text-teal-400",
+  llm: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-400",
+};
+
+const sourceLabels: Record<string, string> = {
+  axe: "axe-core",
+  interactive: "Interactive",
+  llm: "LLM",
+};
+
 interface IssueTableProps {
   auditId: string;
   pageId?: string;
@@ -22,6 +34,7 @@ interface IssueTableProps {
 
 export function IssueTable({ auditId, pageId }: IssueTableProps) {
   const [impact, setImpact] = useState("");
+  const [source, setSource] = useState("");
   const [rule, setRule] = useState("");
   const [offset, setOffset] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -42,6 +55,11 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
     queryFn: fetcher,
   });
 
+  // Client-side source filter (DB doesn't have this filter)
+  const filtered = data
+    ? { ...data, data: source ? data.data.filter((i: IssueResponse) => i.checkSource === source) : data.data }
+    : data;
+
   return (
     <div className="space-y-4">
       <div className="flex gap-2 flex-wrap">
@@ -53,6 +71,14 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
             <SelectItem value="serious">Serious</SelectItem>
             <SelectItem value="moderate">Moderate</SelectItem>
             <SelectItem value="minor">Minor</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={source} onValueChange={(v: string | null) => { setSource(!v || v === "all" ? "" : v); setOffset(0); }}>
+          <SelectTrigger className="w-36" aria-label="Filter by source"><SelectValue placeholder="Source" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All sources</SelectItem>
+            <SelectItem value="axe">axe-core</SelectItem>
+            <SelectItem value="interactive">Interactive</SelectItem>
           </SelectContent>
         </Select>
         <Input
@@ -71,7 +97,7 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
         </div>
       )}
 
-      {data && (
+      {filtered && (
         <>
           <div className="rounded-md border overflow-x-auto">
             <Table>
@@ -79,12 +105,13 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                 <TableRow>
                   <TableHead>Rule</TableHead>
                   <TableHead>Impact</TableHead>
+                  <TableHead>Source</TableHead>
                   <TableHead className="hidden md:table-cell">Category</TableHead>
                   <TableHead className="hidden lg:table-cell">Suggested Fix</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.data.map((issue: IssueResponse) => (
+                {filtered.data.map((issue: IssueResponse) => (
                   <Fragment key={issue.id}>
                     <TableRow
                       className="cursor-pointer hover:bg-muted/50"
@@ -96,6 +123,11 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                           {issue.impact}
                         </Badge>
                       </TableCell>
+                      <TableCell>
+                        <Badge className={sourceColors[issue.checkSource] ?? ""} variant="secondary">
+                          {sourceLabels[issue.checkSource] ?? issue.checkSource}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="hidden md:table-cell text-xs">{issue.category ?? "—"}</TableCell>
                       <TableCell className="hidden lg:table-cell text-xs max-w-xs truncate">
                         {issue.suggestedFix ?? "—"}
@@ -103,7 +135,7 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                     </TableRow>
                     {expanded === issue.id && (
                       <TableRow key={`${issue.id}-detail`}>
-                        <TableCell colSpan={4} className="bg-muted/30">
+                        <TableCell colSpan={5} className="bg-muted/30">
                           <div className="space-y-2 text-xs p-2">
                             <p><strong>Description:</strong> {issue.description}</p>
                             <p><strong>Selector:</strong> <code className="bg-muted px-1 rounded">{issue.selector}</code></p>
@@ -124,9 +156,9 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                     )}
                   </Fragment>
                 ))}
-                {data.data.length === 0 && (
+                {filtered.data.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                       No issues found
                     </TableCell>
                   </TableRow>
@@ -136,8 +168,8 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
           </div>
 
           <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">{data.total} total issues</span>
-            <Pagination total={data.total} limit={limit} offset={offset} onChange={setOffset} />
+            <span className="text-xs text-muted-foreground">{filtered.data.length}{source ? ` (filtered from ${data?.total ?? 0})` : ""} total issues</span>
+            {!source && <Pagination total={data?.total ?? 0} limit={limit} offset={offset} onChange={setOffset} />}
           </div>
         </>
       )}
