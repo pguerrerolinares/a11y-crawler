@@ -351,6 +351,7 @@ export async function runAudit(
   const reportsDir = process.env.REPORTS_DIR || "./reports";
   const pdfPath = join(reportsDir, `${auditId}.pdf`);
   try {
+    const pdfBrowser = await getBrowser();
     await generatePdf(
       {
         meta: {
@@ -370,6 +371,7 @@ export async function runAudit(
         errors,
       } as any,
       pdfPath,
+      pdfBrowser,
     );
     console.log(`PDF saved: ${pdfPath}`);
   } catch (pdfErr) {

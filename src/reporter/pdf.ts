@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+import type { Browser } from "playwright";
 import { writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { SiteReport } from "../types/report.ts";
@@ -6,16 +6,16 @@ import { computeWcagScore } from "./wcag-score.ts";
 
 /**
  * Generates a PDF report from a SiteReport and saves it to outputPath.
- * Launches a headless Chromium, renders HTML, and exports to PDF.
+ * Uses the provided browser instance (Browserless in production, local Chromium in dev).
  */
-export async function generatePdf(report: SiteReport, outputPath: string): Promise<void> {
+export async function generatePdf(report: SiteReport, outputPath: string, browser: Browser): Promise<void> {
   await mkdir(dirname(outputPath), { recursive: true });
 
   const html = buildHtml(report);
 
-  const browser = await chromium.launch({ headless: true, args: ["--disable-dev-shm-usage", "--no-sandbox"] });
+  const context = await browser.newContext();
   try {
-    const page = await browser.newPage();
+    const page = await context.newPage();
     await page.setContent(html, { waitUntil: "networkidle" });
     const pdfBuffer = await page.pdf({
       format: "A4",
@@ -24,7 +24,7 @@ export async function generatePdf(report: SiteReport, outputPath: string): Promi
     });
     await writeFile(outputPath, pdfBuffer);
   } finally {
-    await browser.close();
+    await context.close();
   }
 }
 
