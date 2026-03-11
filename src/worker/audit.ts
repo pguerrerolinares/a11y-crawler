@@ -13,6 +13,9 @@ import { runInteractiveTests } from "../analyzer/interactive.ts";
 import { buildRepresentation } from "../repr/tier.ts";
 import { discoverNavTargets } from "../discovery/nav.ts";
 import { detectSharedIssues } from "../reporter/shared.ts";
+import { computeWcagScore } from "../reporter/wcag-score.ts";
+import { generatePdf } from "../reporter/pdf.ts";
+import { join } from "node:path";
 import {
   emitAuditEvent,
   insertPage,
@@ -298,17 +301,22 @@ export async function runAudit(
     issuesByRule[issue.rule] = (issuesByRule[issue.rule] || 0) + 1;
   }
 
+  const issuesByImpact = {
+    critical: countByImpact("critical"),
+    serious: countByImpact("serious"),
+    moderate: countByImpact("moderate"),
+    minor: countByImpact("minor"),
+  };
+
+  const wcagScore = computeWcagScore(issuesByImpact, pages.length);
+  const crawlErrors = errors.length > 0 ? errors : null;
+
   await markAuditCompleted(
     auditId,
     {
       totalPages: pages.length,
       totalIssues: allIssues.length,
-      issuesByImpact: {
-        critical: countByImpact("critical"),
-        serious: countByImpact("serious"),
-        moderate: countByImpact("moderate"),
-        minor: countByImpact("minor"),
-      },
+      issuesByImpact,
       issuesByRule,
       issuesByCategory: {
         structural: countByCategory("structural"),
@@ -335,13 +343,45 @@ export async function runAudit(
       callsByPurpose: { navigation: navClient.usage.navigationCalls, enrichment: 0 },
     },
     totalDuration,
+    wcagScore,
+    crawlErrors,
   );
+
+  // PDF generation — non-fatal
+  const reportsDir = process.env.REPORTS_DIR || "./reports";
+  const pdfPath = join(reportsDir, `${auditId}.pdf`);
+  try {
+    await generatePdf(
+      {
+        meta: {
+          baseUrl: config.baseUrl,
+          wcagLevel: config.wcagLevel,
+          generatedAt: new Date().toISOString(),
+          totalDurationSeconds: totalDuration,
+          toolVersions: { crawler: "2.0.0", axeCore: "4.x" },
+        },
+        summary: {
+          totalPages: pages.length,
+          totalIssues: allIssues.length,
+          issuesByImpact,
+        },
+        pages: pages.map((p) => ({ url: p.url, issues: p.issues })),
+        sharedIssues,
+        errors,
+      } as any,
+      pdfPath,
+    );
+    console.log(`PDF saved: ${pdfPath}`);
+  } catch (pdfErr) {
+    console.error(`PDF generation failed (non-fatal):`, pdfErr);
+  }
 
   // Emit completed event
   await emitAuditEvent(auditId, "completed", {
     totalPages: pages.length,
     totalIssues: allIssues.length,
     durationSeconds: totalDuration,
+    wcagScore,
   });
 
   // Print LLM summary
