@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { ShieldCheck, AlertTriangle, Loader2, X, Download } from "lucide-react";
 
 export default function Dashboard() {
@@ -215,24 +215,22 @@ export default function Dashboard() {
                   <p className="text-2xl font-bold tabular-nums">{audit.summary?.totalIssues ?? 0}</p>
                   <p className="text-xs text-muted-foreground">Issues Found</p>
                 </div>
-                {audit.finishedAt && audit.startedAt && (
+                {audit.durationSeconds != null && (
                   <div>
-                    <p className="text-2xl font-bold tabular-nums">
-                      {Math.round((new Date(audit.finishedAt).getTime() - new Date(audit.startedAt).getTime()) / 1000)}s
-                    </p>
+                    <p className="text-2xl font-bold tabular-nums">{audit.durationSeconds}s</p>
                     <p className="text-xs text-muted-foreground">Scan Duration</p>
                   </div>
                 )}
               </div>
               <div className="flex gap-2">
-                <Button size="sm">
+                <a href={`/api/audits/${currentAuditId}/export/pdf`} download className={buttonVariants({ size: "sm" })}>
                   <Download className="h-4 w-4 mr-1.5" />
                   Download PDF Report
-                </Button>
-                <Button variant="outline" size="sm">
+                </a>
+                <a href={`/api/audits/${currentAuditId}/export/csv`} download className={buttonVariants({ variant: "outline", size: "sm" })}>
                   <Download className="h-4 w-4 mr-1.5" />
                   Export CSV
-                </Button>
+                </a>
               </div>
             </CardContent>
           </Card>

@@ -7,11 +7,11 @@ import { StatsCards } from "@/components/stats-cards";
 import { IssueTable } from "@/components/issue-table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { QueryError } from "@/components/error-boundary";
-import { Trash2, ArrowLeft, Globe, Clock, AlertTriangle } from "lucide-react";
+import { Trash2, ArrowLeft, Globe, Clock, AlertTriangle, Download } from "lucide-react";
 
 export default function AuditDetail() {
   const { id } = useParams<{ id: string }>();
@@ -87,6 +87,18 @@ export default function AuditDetail() {
           <Badge variant={audit.status === "completed" ? "default" : audit.status === "failed" ? "destructive" : "secondary"}>
             {audit.status}
           </Badge>
+          {audit.status === "completed" && (
+            <>
+              <a href={`/api/audits/${id}/export/pdf`} download className={buttonVariants({ size: "sm" })}>
+                <Download className="h-4 w-4 mr-1.5" />
+                PDF
+              </a>
+              <a href={`/api/audits/${id}/export/csv`} download className={buttonVariants({ variant: "outline", size: "sm" })}>
+                <Download className="h-4 w-4 mr-1.5" />
+                CSV
+              </a>
+            </>
+          )}
           <Button variant="outline" size="sm" onClick={() => deleteMutation.mutate()}>
             <Trash2 className="h-4 w-4" />
           </Button>
