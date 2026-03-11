@@ -20,6 +20,9 @@ export interface AuditResponse {
   summary: { totalIssues?: number; totalPages?: number; issuesByImpact?: Record<string, number> } | null;
   discovery: Record<string, unknown> | null;
   llmUsage: Record<string, unknown> | null;
+  wcagScore: number | null;
+  durationSeconds: number | null;
+  crawlErrors: Array<{ url: string; phase: string; message: string; timestamp: string }> | null;
 }
 
 export interface PageResponse {
