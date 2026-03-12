@@ -1,0 +1,1 @@
+[   23716ms] [WARNING] WebSocket connection to 'ws://localhost:5173/ws/audits/3e9fed7d-2e24-4ec7-86a0-9b8253a6ab3c' failed: WebSocket is closed before the connection is established. @ http://localhost:5173/src/hooks/use-websocket.ts:20

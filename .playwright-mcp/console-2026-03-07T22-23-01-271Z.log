@@ -1,0 +1,2 @@
+[30457409ms] [WARNING] WebSocket connection to 'ws://localhost:5173/ws/logs' failed: WebSocket is closed before the connection is established. @ http://localhost:5173/src/hooks/use-log-stream.ts:35
+[30548038ms] [WARNING] WebSocket connection to 'ws://localhost:5173/ws/logs' failed: WebSocket is closed before the connection is established. @ http://localhost:5173/src/hooks/use-log-stream.ts:35
