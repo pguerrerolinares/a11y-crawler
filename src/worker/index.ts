@@ -40,8 +40,8 @@ async function launchBrowser(): Promise<Browser> {
 async function main() {
   console.log("=== A11y Crawler Worker ===");
 
-  // Initialize DB
-  initWorkerDb();
+  // Initialize DB (runs migrations if needed)
+  await initWorkerDb();
   console.log("Database connected");
 
   // Launch browser (local Chromium or remote Browserless)

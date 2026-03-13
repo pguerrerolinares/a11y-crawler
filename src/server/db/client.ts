@@ -42,4 +42,32 @@ async function runMigrations(conn: InstanceType<typeof SQL>) {
     });
     console.log("Migration v4-clean applied");
   }
+
+  // Migration: add v4 pipeline columns to existing tables
+  if (!appliedSet.has("v4-pipeline-columns")) {
+    console.log("Running migration: v4-pipeline-columns");
+    await conn.begin(async (tx) => {
+      // pages: template support
+      await tx.unsafe(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS template_id TEXT`);
+      await tx.unsafe(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS is_representative BOOLEAN DEFAULT false`);
+      await tx.unsafe(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS fingerprint TEXT`);
+      await tx.unsafe(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS element_count INTEGER`);
+      await tx.unsafe(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS capabilities JSONB`);
+      // issues: template amplification
+      await tx.unsafe(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS template_id TEXT`);
+      await tx.unsafe(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS affected_pages INTEGER DEFAULT 1`);
+      await tx.unsafe(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS amplified_from TEXT`);
+      // audits: pipeline metadata
+      await tx.unsafe(`ALTER TABLE audits ADD COLUMN IF NOT EXISTS wcag_score INT`);
+      await tx.unsafe(`ALTER TABLE audits ADD COLUMN IF NOT EXISTS duration_seconds INT`);
+      await tx.unsafe(`ALTER TABLE audits ADD COLUMN IF NOT EXISTS crawl_errors JSONB`);
+      await tx.unsafe(`ALTER TABLE audits ADD COLUMN IF NOT EXISTS template_clusters JSONB`);
+      await tx.unsafe(`ALTER TABLE audits ADD COLUMN IF NOT EXISTS coverage JSONB`);
+      await tx.unsafe(`ALTER TABLE audits ADD COLUMN IF NOT EXISTS regression JSONB`);
+      // unique index for page upsert
+      await tx.unsafe(`CREATE UNIQUE INDEX IF NOT EXISTS idx_pages_audit_url ON pages(audit_id, url)`);
+      await tx.unsafe(`INSERT INTO migrations (id) VALUES ('v4-pipeline-columns')`);
+    });
+    console.log("Migration v4-pipeline-columns applied");
+  }
 }
