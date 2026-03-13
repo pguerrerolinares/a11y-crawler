@@ -394,3 +394,54 @@ export async function testTimedEvents(page: Page, url: string): Promise<Issue[]>
     }
   });
 }
+
+/**
+ * WCAG 2.5.8 — Target Size: interactive elements must have minimum 24×24px target area.
+ * Supplements axe-core's target-size rule by catching inline links, custom role elements.
+ */
+export async function testTargetSize(page: Page, url: string): Promise<Issue[]> {
+  const MIN_SIZE = 24;
+  const INTERACTIVE_SELECTOR = [
+    "a", "button", "input", "select", "textarea",
+    '[role="button"]', '[role="link"]', '[role="checkbox"]',
+    '[role="radio"]', '[role="tab"]', '[role="menuitem"]',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(", ");
+
+  const undersized = await page.evaluate(
+    ({ selector, minSize }: { selector: string; minSize: number }) => {
+      const results: Array<{ selector: string; html: string; width: number; height: number }> = [];
+
+      for (const el of document.querySelectorAll(selector)) {
+        const rect = el.getBoundingClientRect();
+        // Skip hidden elements
+        if (rect.width === 0 && rect.height === 0) continue;
+        if (rect.width < minSize || rect.height < minSize) {
+          const css =
+            el.id ? `#${el.id}` :
+            el.className && typeof el.className === "string"
+              ? `${el.tagName.toLowerCase()}.${el.className.trim().split(/\s+/).join(".")}`
+              : el.tagName.toLowerCase();
+          results.push({
+            selector: css,
+            html: el.outerHTML.slice(0, 200),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          });
+        }
+      }
+      return results;
+    },
+    { selector: INTERACTIVE_SELECTOR, minSize: MIN_SIZE },
+  );
+
+  return undersized.map((el) =>
+    makeIssue(
+      url,
+      "target-size",
+      "serious",
+      `Interactive element "${el.selector}" is ${el.width}×${el.height}px, below minimum 24×24px (WCAG 2.5.8 Target Size)`,
+      el.selector,
+    ),
+  );
+}
