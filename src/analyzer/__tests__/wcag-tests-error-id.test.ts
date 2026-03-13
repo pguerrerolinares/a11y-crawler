@@ -27,6 +27,8 @@ function mockPage(options: {
                 return Promise.resolve(Array(f.ariaInvalidCount).fill({}));
               if (sel === '[aria-invalid="true"][aria-describedby]')
                 return Promise.resolve(Array(f.ariaDescribedbyCount).fill({}));
+              if (sel === '[role="alert"]')
+                return Promise.resolve(Array(f.roleAlertCount).fill({}));
               return Promise.resolve([]);
             }),
             $: mock((sel: string) => {
