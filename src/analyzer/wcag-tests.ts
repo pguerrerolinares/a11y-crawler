@@ -1,5 +1,6 @@
 import type { Page } from "playwright";
 import type { Issue, ImpactLevel } from "../types/issue";
+import { parseRgba, alphaBlend, relativeLuminance, contrastRatio } from "./contrast";
 
 function makeIssue(
   url: string,
@@ -532,6 +533,147 @@ export async function testErrorIdentification(page: Page, url: string): Promise<
           "moderate",
           `Form (action="${action || "self"}") sets aria-invalid but lacks aria-describedby to describe the error (WCAG 3.3.3 Error Suggestion)`,
           `form[action="${action}"]`,
+        ),
+      );
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * WCAG 1.4.11 — Non-text Contrast: borders of interactive elements must have
+ * at least 3:1 contrast ratio against adjacent colors (inner bg + outer bg).
+ *
+ * Approach B: evaluate extracts color data, contrast math runs in Node.
+ */
+export async function testNonTextContrast(page: Page, url: string): Promise<Issue[]> {
+  const INTERACTIVE_SELECTOR = [
+    "button", "input", "select", "textarea",
+    '[role="button"]', '[role="checkbox"]', '[role="radio"]',
+    '[role="switch"]', '[role="slider"]', '[role="tab"]',
+  ].join(", ");
+
+  const MIN_RATIO = 3.0;
+
+  interface ElementColorData {
+    selector: string;
+    html: string;
+    sides: Array<{
+      side: string;
+      borderColor: string;
+      borderWidth: number;
+    }>;
+    elementBg: string;
+    parentBg: string;
+  }
+
+  let elements: ElementColorData[];
+  try {
+    elements = await page.evaluate((selector: string) => {
+      const SIDES = ["Top", "Right", "Bottom", "Left"] as const;
+
+      function resolveParentBg(el: Element): string {
+        let current = el.parentElement;
+        while (current) {
+          const bg = getComputedStyle(current).backgroundColor;
+          if (bg && bg !== "transparent" && bg !== "rgba(0, 0, 0, 0)") {
+            return bg;
+          }
+          current = current.parentElement;
+        }
+        return "rgb(255, 255, 255)";
+      }
+
+      function cssSelector(el: Element): string {
+        if (el.id) return `#${el.id}`;
+        if (el.className && typeof el.className === "string") {
+          return `${el.tagName.toLowerCase()}.${el.className.trim().split(/\s+/).join(".")}`;
+        }
+        return el.tagName.toLowerCase();
+      }
+
+      const results: ElementColorData[] = [];
+      for (const el of document.querySelectorAll(selector)) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) continue;
+
+        const style = getComputedStyle(el);
+        const sides: ElementColorData["sides"] = [];
+
+        for (const side of SIDES) {
+          const width = parseFloat(style.getPropertyValue(`border-${side.toLowerCase()}-width`));
+          if (width > 0) {
+            sides.push({
+              side: side.toLowerCase(),
+              borderColor: style.getPropertyValue(`border-${side.toLowerCase()}-color`),
+              borderWidth: width,
+            });
+          }
+        }
+
+        if (sides.length === 0) continue;
+
+        results.push({
+          selector: cssSelector(el),
+          html: el.outerHTML.slice(0, 200),
+          sides,
+          elementBg: style.backgroundColor,
+          parentBg: resolveParentBg(el),
+        });
+      }
+      return results;
+    }, INTERACTIVE_SELECTOR);
+  } catch {
+    return [];
+  }
+
+  const issues: Issue[] = [];
+
+  for (const el of elements) {
+    const elementBgRgba = parseRgba(el.elementBg);
+    const parentBgRgba = parseRgba(el.parentBg);
+    const innerBg: [number, number, number] = elementBgRgba
+      ? [elementBgRgba[0], elementBgRgba[1], elementBgRgba[2]]
+      : [255, 255, 255];
+    const outerBg: [number, number, number] = parentBgRgba
+      ? [parentBgRgba[0], parentBgRgba[1], parentBgRgba[2]]
+      : [255, 255, 255];
+
+    let worstRatio = Infinity;
+    let worstSide = "";
+
+    for (const side of el.sides) {
+      const borderRgba = parseRgba(side.borderColor);
+      if (!borderRgba) continue;
+
+      const blendedInner = alphaBlend(borderRgba, innerBg);
+      const ratioInner = contrastRatio(
+        relativeLuminance(blendedInner),
+        relativeLuminance(innerBg),
+      );
+
+      const blendedOuter = alphaBlend(borderRgba, outerBg);
+      const ratioOuter = contrastRatio(
+        relativeLuminance(blendedOuter),
+        relativeLuminance(outerBg),
+      );
+
+      const worst = Math.min(ratioInner, ratioOuter);
+      if (worst < worstRatio) {
+        worstRatio = worst;
+        worstSide = side.side;
+      }
+    }
+
+    if (worstRatio < MIN_RATIO) {
+      issues.push(
+        makeIssue(
+          url,
+          "non-text-contrast",
+          "serious",
+          `Border of <${el.selector}> (${worstSide} side) has contrast ratio ${worstRatio.toFixed(1)}:1 against adjacent background (needs 3:1) — WCAG 1.4.11 Non-text Contrast`,
+          el.selector,
         ),
       );
     }

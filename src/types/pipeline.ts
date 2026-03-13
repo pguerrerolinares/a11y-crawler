@@ -29,7 +29,8 @@ export type TestType =
   | "multimedia"
   | "timed-events"
   | "target-size"
-  | "error-identification";
+  | "error-identification"
+  | "non-text-contrast";
 
 export interface TemplateCluster {
   id: string;
