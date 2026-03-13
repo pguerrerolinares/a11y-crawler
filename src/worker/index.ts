@@ -1,6 +1,7 @@
 import { chromium } from "playwright";
 import { initWorkerDb, claimNextAudit, markAuditFailed } from "./db.ts";
-import { runAudit } from "./audit.ts";
+import { runPipeline } from "./pipeline";
+import { LLMClient } from "../llm/client";
 import type { Browser } from "playwright";
 
 const POLL_INTERVAL_MS = 5000;
@@ -91,10 +92,20 @@ async function main() {
           }
           return browser;
         };
-        await runAudit(getBrowser, audit.id, {
+        const llmClient = process.env.LLM_API_KEY
+          ? new LLMClient({
+              apiKey: process.env.LLM_API_KEY,
+              baseUrl: process.env.LLM_BASE_URL ?? "https://api.moonshot.ai/v1",
+              model: process.env.LLM_MODEL ?? "kimi-k2-turbo-preview",
+              rateLimitRpm: 10,
+            })
+          : null;
+        await runPipeline(getBrowser, audit.id, {
           baseUrl: audit.url,
-          ...audit.config,
-        });
+          maxPages: audit.config?.maxPages as number | undefined,
+          maxDepth: audit.config?.maxDepth as number | undefined,
+          wcagLevel: audit.config?.wcagLevel as "A" | "AA" | "AAA" | undefined,
+        }, llmClient);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`Audit ${audit.id} failed:`, message);
