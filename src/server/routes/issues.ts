@@ -23,7 +23,7 @@ export async function handleIssues(req: Request, url: URL): Promise<Response> {
 async function listIssues(filterCol: "audit_id" | "page_id", filterVal: string, url: URL): Promise<Response> {
   const db = getDb();
   const params = Object.fromEntries(url.searchParams);
-  const { limit, offset, impact, rule, category } = IssueFilterSchema.parse(params);
+  const { limit, offset, impact, rule, category, source } = IssueFilterSchema.parse(params);
 
   const conditions = [`${filterCol} = $1`];
   const values: (string | number)[] = [filterVal];
@@ -44,6 +44,11 @@ async function listIssues(filterCol: "audit_id" | "page_id", filterVal: string, 
   if (category) {
     conditions.push(`category = $${paramIdx}`);
     values.push(category);
+    paramIdx++;
+  }
+  if (source) {
+    conditions.push(`check_source = $${paramIdx}`);
+    values.push(source);
     paramIdx++;
   }
 

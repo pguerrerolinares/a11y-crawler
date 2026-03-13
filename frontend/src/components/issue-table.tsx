@@ -17,14 +17,16 @@ const impactColors: Record<string, string> = {
 
 const sourceColors: Record<string, string> = {
   axe: "bg-purple-500/15 text-purple-700 dark:text-purple-400",
+  "scan-light": "bg-purple-500/15 text-purple-700 dark:text-purple-400",
+  "wcag-custom": "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
   interactive: "bg-teal-500/15 text-teal-700 dark:text-teal-400",
-  llm: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-400",
 };
 
 const sourceLabels: Record<string, string> = {
   axe: "axe-core",
+  "scan-light": "axe (light)",
+  "wcag-custom": "WCAG custom",
   interactive: "Interactive",
-  llm: "LLM",
 };
 
 interface IssueTableProps {
@@ -45,20 +47,16 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
   params.set("offset", String(offset));
   if (impact) params.set("impact", impact);
   if (rule) params.set("rule", rule);
+  if (source) params.set("source", source);
 
   const fetcher = pageId
     ? () => api.issues.byPage(pageId, params.toString())
     : () => api.issues.byAudit(auditId, params.toString());
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["issues", auditId, pageId, impact, rule, offset],
+  const { data: filtered, isLoading } = useQuery({
+    queryKey: ["issues", auditId, pageId, impact, source, rule, offset],
     queryFn: fetcher,
   });
-
-  // Client-side source filter (DB doesn't have this filter)
-  const filtered = data
-    ? { ...data, data: source ? data.data.filter((i: IssueResponse) => i.checkSource === source) : data.data }
-    : data;
 
   return (
     <div className="space-y-4">
@@ -78,6 +76,7 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
           <SelectContent>
             <SelectItem value="all">All sources</SelectItem>
             <SelectItem value="axe">axe-core</SelectItem>
+            <SelectItem value="wcag-custom">WCAG custom</SelectItem>
             <SelectItem value="interactive">Interactive</SelectItem>
           </SelectContent>
         </Select>
@@ -168,8 +167,8 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
           </div>
 
           <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">{filtered.data.length}{source ? ` (filtered from ${data?.total ?? 0})` : ""} total issues</span>
-            {!source && <Pagination total={data?.total ?? 0} limit={limit} offset={offset} onChange={setOffset} />}
+            <span className="text-xs text-muted-foreground">{filtered.total} issues</span>
+            <Pagination total={filtered.total} limit={limit} offset={offset} onChange={setOffset} />
           </div>
         </>
       )}

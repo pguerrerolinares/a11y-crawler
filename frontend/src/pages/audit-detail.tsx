@@ -11,7 +11,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { QueryError } from "@/components/error-boundary";
-import { Trash2, ArrowLeft, Globe, Clock, AlertTriangle, Download } from "lucide-react";
+import { Trash2, ArrowLeft, Globe, Clock, AlertTriangle, Download, ChevronDown } from "lucide-react";
 import { RegressionTab } from "@/components/regression-tab";
 
 export default function AuditDetail() {
@@ -121,6 +121,33 @@ export default function AuditDetail() {
       {audit.status === "completed" && audit.summary && (
         <>
           <StatsCards summary={audit.summary} wcagScore={audit.wcagScore} />
+
+          {audit.crawlErrors && audit.crawlErrors.length > 0 && (
+            <details className="group rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-900/60 dark:bg-amber-950/20">
+              <summary className="flex cursor-pointer select-none items-center gap-2.5 px-4 py-3 text-sm">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+                <span className="font-medium text-amber-700 dark:text-amber-400">
+                  {audit.crawlErrors.length} page{audit.crawlErrors.length !== 1 ? "s" : ""} failed during crawl
+                </span>
+                <span className="ml-auto text-xs text-amber-600/70 dark:text-amber-500/70 group-open:hidden">
+                  Show details
+                </span>
+                <ChevronDown className="ml-auto h-4 w-4 shrink-0 text-amber-500 transition-transform duration-200 group-open:rotate-180 group-open:ml-0" />
+              </summary>
+              <div className="border-t border-amber-200 dark:border-amber-900/60 px-4 py-3 space-y-2">
+                {audit.crawlErrors.map((err, i) => (
+                  <div key={i} className="flex flex-col gap-0.5 rounded-md bg-white/60 dark:bg-white/5 px-3 py-2 text-xs">
+                    <span className="font-mono text-foreground/80 truncate">{err.url}</span>
+                    <span className="text-muted-foreground">
+                      <span className="text-amber-600 dark:text-amber-500 font-medium">{err.phase}</span>
+                      {" — "}
+                      {err.message}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
 
           <Tabs defaultValue="issues">
             <TabsList>
