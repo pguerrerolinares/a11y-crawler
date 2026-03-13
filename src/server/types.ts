@@ -51,6 +51,8 @@ export interface AuditResponse {
   wcagScore: number | null;
   durationSeconds: number | null;
   crawlErrors: Array<{ url: string; phase: string; message: string; timestamp: string }> | null;
+  templateClusters: unknown[] | null;
+  regression: Record<string, unknown> | null;
 }
 
 export interface PageResponse {
