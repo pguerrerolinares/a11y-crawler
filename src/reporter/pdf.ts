@@ -2,16 +2,16 @@ import type { Browser } from "playwright";
 import { writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { SiteReport } from "../types/report.ts";
-import { computeWcagScore } from "./wcag-score.ts";
 
 /**
  * Generates a PDF report from a SiteReport and saves it to outputPath.
  * Uses the provided browser instance (Browserless in production, local Chromium in dev).
+ * wcagScore should be the pre-computed score from the DB (based on distinct rules, not nodes).
  */
-export async function generatePdf(report: SiteReport, outputPath: string, browser: Browser): Promise<void> {
+export async function generatePdf(report: SiteReport, outputPath: string, browser: Browser, wcagScore?: number | null): Promise<void> {
   await mkdir(dirname(outputPath), { recursive: true });
 
-  const html = buildHtml(report);
+  const html = buildHtml(report, wcagScore ?? null);
 
   const context = await browser.newContext();
   try {
@@ -28,9 +28,9 @@ export async function generatePdf(report: SiteReport, outputPath: string, browse
   }
 }
 
-function buildHtml(report: SiteReport): string {
+function buildHtml(report: SiteReport, wcagScore: number | null): string {
   const { meta, summary, sharedIssues, pages } = report;
-  const scoreStr = computeScoreStr(summary);
+  const scoreStr = wcagScore === null ? "N/A" : String(wcagScore);
   const date = new Date(meta.generatedAt).toLocaleDateString("en-US", {
     year: "numeric", month: "long", day: "numeric",
   });
@@ -144,11 +144,6 @@ function scoreColor(summary: SiteReport["summary"]): string {
   if (total > 20) return "#ea580c";
   if (total > 5) return "#d97706";
   return "#16a34a";
-}
-
-function computeScoreStr(summary: SiteReport["summary"]): string {
-  const score = computeWcagScore(summary.issuesByImpact, summary.totalPages);
-  return score === null ? "N/A" : String(score);
 }
 
 function escHtml(str: string): string {

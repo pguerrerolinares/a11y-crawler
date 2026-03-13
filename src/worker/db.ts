@@ -92,15 +92,20 @@ export async function markAuditCompleted(
 }
 
 /**
- * Get issue counts by impact level for an audit (for WCAG score computation).
+ * Get distinct violated-rule counts by impact level for WCAG score computation.
+ * Uses COUNT(DISTINCT rule) so that a single rule with many node violations
+ * (e.g. 30 color-contrast nodes) counts as 1, not 30 — matching how
+ * Lighthouse and similar tools score accessibility.
+ * Excludes scan-light issues (overlap with axe-full on representative pages).
  */
 export async function getIssueCountsByImpact(
   auditId: string,
 ): Promise<{ critical: number; serious: number; moderate: number; minor: number }> {
   const rows = await db`
-    SELECT impact, COUNT(*)::int as count
+    SELECT impact, COUNT(DISTINCT rule)::int as count
     FROM issues
     WHERE audit_id = ${auditId}
+      AND check_source != 'scan-light'
     GROUP BY impact
   `;
   const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
@@ -196,39 +201,6 @@ export async function insertIssues(
   });
 }
 
-/**
- * Insert shared issues for an audit.
- */
-export async function insertSharedIssues(
-  auditId: string,
-  sharedIssues: Array<{
-    rule: string;
-    impact: string;
-    normalizedHtml: string;
-    pageCount: number;
-    pageUrls: string[];
-    suggestedFix: string | null;
-    category: string;
-  }>,
-): Promise<void> {
-  if (sharedIssues.length === 0) return;
-
-  await db.begin(async (tx: ReturnType<typeof postgres>) => {
-    for (const si of sharedIssues) {
-      await tx`
-        INSERT INTO shared_issues (
-          audit_id, rule, impact, normalized_html, page_count,
-          page_urls, suggested_fix, category
-        )
-        VALUES (
-          ${auditId}, ${si.rule}, ${si.impact}, ${si.normalizedHtml},
-          ${si.pageCount}, ${json(si.pageUrls)},
-          ${si.suggestedFix}, ${si.category}
-        )
-      `;
-    }
-  });
-}
 
 /**
  * Persist observability spans for an audit.
