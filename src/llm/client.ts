@@ -146,9 +146,6 @@ export function extractJsonFromLlm(text: string): unknown | null {
   }
 }
 
-/** Rough cost estimate per token in USD (all Kimi models, approximate) */
-export const COST_PER_TOKEN_USD = 0.000001;
-
 /**
  * Build a multimodal user message with text + base64 images.
  */
@@ -165,3 +162,4 @@ export function buildMultimodalMessage(
   ];
   return { role: "user", content };
 }
+
