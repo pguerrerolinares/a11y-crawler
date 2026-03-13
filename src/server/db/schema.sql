@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS request_logs (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pages_audit_url ON pages(audit_id, url);
 CREATE INDEX IF NOT EXISTS idx_audits_status ON audits(status);
 CREATE INDEX IF NOT EXISTS idx_audits_created ON audits(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_pages_audit ON pages(audit_id);

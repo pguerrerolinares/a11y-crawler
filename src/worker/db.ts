@@ -247,6 +247,12 @@ export async function insertPageV4(
             ${page.capabilities ? json(page.capabilities) : null},
             ${page.issueCount ?? 0}, ${json(page.issuesByImpact ?? {})},
             ${page.durationMs ?? 0})
+    ON CONFLICT (audit_id, url) DO UPDATE SET
+      title = COALESCE(NULLIF(EXCLUDED.title, ''), pages.title),
+      template_id = COALESCE(EXCLUDED.template_id, pages.template_id),
+      is_representative = EXCLUDED.is_representative OR pages.is_representative,
+      issue_count = EXCLUDED.issue_count,
+      issues_by_impact = EXCLUDED.issues_by_impact
     RETURNING id
   `;
   return row.id;
@@ -293,6 +299,14 @@ export async function insertIssuesV4(
          ${i.templateId ?? null}, ${i.affectedPages ?? 1}, ${i.amplifiedFrom ?? null})
     `;
   }
+}
+
+/**
+ * Count actual pages persisted for an audit.
+ */
+export async function getPageCount(auditId: string): Promise<number> {
+  const [row] = await db`SELECT COUNT(*)::int as count FROM pages WHERE audit_id = ${auditId}`;
+  return row.count;
 }
 
 /**

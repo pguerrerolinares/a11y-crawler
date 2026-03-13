@@ -3,7 +3,7 @@ import type { Browser } from "playwright";
 import type { PipelineConfig, CrawlError } from "../types/pipeline";
 import type { LLMClient } from "../llm/client";
 import { AuditTracer } from "./tracer";
-import { persistSpans, markAuditCompleted, markAuditFailed, emitAuditEvent, getIssueCountsByImpact, getPreviousAudit, getIssuesByTemplateId, updateAuditRegression } from "./db";
+import { persistSpans, markAuditCompleted, markAuditFailed, emitAuditEvent, getIssueCountsByImpact, getPageCount, getPreviousAudit, getIssuesByTemplateId, updateAuditRegression } from "./db";
 import { matchTemplatesAcrossAudits, computeRegressionDiff } from "../analyzer/regression";
 import type { SerializedCluster } from "../analyzer/regression";
 import { computeWcagScore } from "../reporter/wcag-score";
@@ -156,7 +156,8 @@ export async function runPipeline(
 
       // Compute WCAG score from persisted issues
       const issuesByImpact = await getIssueCountsByImpact(auditId);
-      const wcagScore = computeWcagScore(issuesByImpact, scanResults.size);
+      const totalPages = await getPageCount(auditId);
+      const wcagScore = computeWcagScore(issuesByImpact, totalPages);
 
       // Serialize template clusters (slim format — no lightIssues)
       const serializedClusters = templates.map((t) => ({
@@ -172,7 +173,7 @@ export async function runPipeline(
       // Build summary
       const totalIssues = issuesByImpact.critical + issuesByImpact.serious + issuesByImpact.moderate + issuesByImpact.minor;
       const summary = {
-        totalPages: scanResults.size,
+        totalPages,
         totalTemplates: templates.length,
         totalIssues,
         issuesByImpact,
