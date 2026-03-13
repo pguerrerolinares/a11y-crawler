@@ -6,10 +6,13 @@ export interface ImpactCounts {
 }
 
 /**
- * Computes WCAG accessibility score (0-100) using Formula C:
- * weighted per-page average penalty, normalized by page count.
+ * Computes WCAG accessibility score (0-100) from distinct violated rules
+ * per impact level.
  *
  * Weights: critical=10, serious=5, moderate=2, minor=1
+ *
+ * The input should be COUNT(DISTINCT rule) per impact, not per-node counts.
+ * This matches how Lighthouse scores accessibility — by rule, not by element.
  *
  * Returns null if totalPages is 0 (no pages analyzed).
  */
@@ -25,6 +28,5 @@ export function computeWcagScore(
     (issuesByImpact.moderate ?? 0) * 2 +
     (issuesByImpact.minor ?? 0) * 1;
 
-  const avgPenaltyPerPage = totalPenalty / totalPages;
-  return Math.max(0, Math.round(100 - avgPenaltyPerPage));
+  return Math.max(0, Math.round(100 - totalPenalty));
 }

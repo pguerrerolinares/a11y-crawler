@@ -60,18 +60,6 @@ CREATE TABLE IF NOT EXISTS issues (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS shared_issues (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  audit_id        UUID NOT NULL REFERENCES audits(id) ON DELETE CASCADE,
-  rule            TEXT,
-  impact          TEXT,
-  normalized_html TEXT,
-  page_count      INT,
-  page_urls       JSONB,
-  suggested_fix   TEXT,
-  category        TEXT
-);
-
 CREATE TABLE IF NOT EXISTS audit_events (
   id          SERIAL PRIMARY KEY,
   audit_id    UUID NOT NULL REFERENCES audits(id) ON DELETE CASCADE,

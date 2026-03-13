@@ -63,42 +63,36 @@ async function listIssues(filterCol: "audit_id" | "page_id", filterVal: string, 
 async function listSharedIssues(auditId: string): Promise<Response> {
   const db = getDb();
 
-  // Try v4 template-amplified issues first (grouped by rule + template)
-  const v4Issues = await db`
-    SELECT rule, impact, template_id, COUNT(DISTINCT page_id)::int as page_count,
+  const issues = await db`
+    SELECT i.rule, i.impact, i.template_id,
+           COUNT(DISTINCT i.page_id)::int as page_count,
            array_agg(DISTINCT p.url) as page_urls,
-           MAX(i.suggested_fix) as suggested_fix
+           MAX(i.description) as description,
+           MAX(i.help) as help,
+           MAX(i.help_url) as help_url,
+           MAX(i.suggested_fix) as suggested_fix,
+           MAX(i.category) as category
     FROM issues i
     JOIN pages p ON p.id = i.page_id
     WHERE i.audit_id = ${auditId}
       AND i.template_id IS NOT NULL
-    GROUP BY rule, impact, template_id
-    HAVING COUNT(DISTINCT page_id) > 1
+    GROUP BY i.rule, i.impact, i.template_id
+    HAVING COUNT(DISTINCT i.page_id) > 1
     ORDER BY page_count DESC
   `;
 
-  if (v4Issues.length > 0) {
-    return Response.json({
-      data: v4Issues.map((row: Record<string, unknown>) => ({
-        rule: row.rule,
-        impact: row.impact,
-        pageCount: row.page_count,
-        pageUrls: row.page_urls,
-        suggestedFix: row.suggested_fix,
-      })),
-    });
-  }
-
-  // Fallback to legacy shared_issues table
-  const issues = await db`SELECT * FROM shared_issues WHERE audit_id = ${auditId} ORDER BY page_count DESC`;
   return Response.json({
     data: issues.map((row: Record<string, unknown>) => ({
       rule: row.rule,
       impact: row.impact,
-      normalizedHtml: row.normalized_html,
+      templateId: row.template_id,
+      description: row.description,
+      help: row.help,
+      helpUrl: row.help_url,
       pageCount: row.page_count,
       pageUrls: row.page_urls,
       suggestedFix: row.suggested_fix,
+      category: row.category,
     })),
   });
 }
