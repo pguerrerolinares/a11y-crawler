@@ -7,7 +7,7 @@ import { ProbeContextManager } from "./probe-context";
 import { insertPageV4, insertIssuesV4 } from "./db";
 import { injectConsentPrehideCSS } from "../analyzer/consent-blocker";
 import { runInteractiveTests } from "../analyzer/interactive";
-import { testReflow, testTextSpacing, testResizeText, testMultimedia, testTimedEvents } from "../analyzer/wcag-tests";
+import { testReflow, testTextSpacing, testResizeText, testMultimedia, testTimedEvents, testTargetSize, testErrorIdentification } from "../analyzer/wcag-tests";
 import { AuditTracer } from "./tracer";
 
 const TEMPLATE_LEVEL_RULES = new Set([
@@ -51,8 +51,16 @@ export async function runProbePhase(
             parentSpan.setMeta({ axeViolations: axeIssues.length });
           }
 
+          // 1.5. Error identification (form interaction — must run before interactive tests)
+          if (cluster.testPlan.includes("error-identification")) {
+            const errorIdIssues = await testErrorIdentification(page, url);
+            allIssues.push(...errorIdIssues);
+            parentSpan.setMeta({ errorIdViolations: errorIdIssues.length });
+          }
+
           // 2. page.evaluate()-only tests (parallel)
           const evaluateTests: Promise<Issue[]>[] = [];
+          if (cluster.testPlan.includes("target-size")) evaluateTests.push(testTargetSize(page, url));
           if (cluster.testPlan.includes("multimedia")) evaluateTests.push(testMultimedia(page, url));
           if (cluster.testPlan.includes("timed-events")) evaluateTests.push(testTimedEvents(page, url));
           const evaluateResults = await Promise.all(evaluateTests);
