@@ -445,3 +445,95 @@ export async function testTargetSize(page: Page, url: string): Promise<Issue[]> 
     ),
   );
 }
+
+/**
+ * WCAG 3.3.1–3.3.3 — Error Identification: forms must provide accessible error messages
+ * when submitted without filling required fields.
+ *
+ * Safety: skips payment/auth forms, detects navigation post-submit, never fills fields.
+ */
+export async function testErrorIdentification(page: Page, url: string): Promise<Issue[]> {
+  const SKIP_ACTIONS = /payment|checkout|stripe|paypal|oauth|login|signin|signup|register/i;
+  const issues: Issue[] = [];
+
+  const forms = await page.$$("form");
+
+  for (const form of forms) {
+    // Safety: skip payment/auth forms
+    const action = (await form.getAttribute("action")) ?? "";
+    if (SKIP_ACTIONS.test(action)) continue;
+
+    // Skip forms without required fields
+    const requiredFields = await form.$$('[required], [aria-required="true"]');
+    if (requiredFields.length === 0) continue;
+
+    // Find submit button
+    const submitBtn = await form.$('button[type="submit"], input[type="submit"], button:not([type])');
+    if (!submitBtn) continue;
+
+    // Snapshot URL to detect navigation
+    const urlBefore = page.url();
+
+    // Submit without filling fields
+    await submitBtn.click();
+    await page.waitForTimeout(500);
+
+    // Detect navigation — go back immediately
+    if (page.url() !== urlBefore) {
+      await page.goBack({ waitUntil: "domcontentloaded" }).catch(() => {});
+      issues.push(
+        makeIssue(
+          url,
+          "error-identification",
+          "critical",
+          `Form (action="${action || "self"}") navigates on empty submission without client-side validation (WCAG 3.3.1 Error Identification)`,
+          `form[action="${action}"]`,
+        ),
+      );
+      continue;
+    }
+
+    // Check for accessible error indicators
+    const hasAriaInvalid = await form.$$('[aria-invalid="true"]');
+    const hasRoleAlert = await page.$$('[role="alert"]');
+    const hasAriaDescribedby = await form.$$('[aria-invalid="true"][aria-describedby]');
+
+    if (hasAriaInvalid.length === 0) {
+      issues.push(
+        makeIssue(
+          url,
+          "error-identification",
+          "serious",
+          `Form (action="${action || "self"}") does not set aria-invalid="true" on fields after empty submission (WCAG 3.3.1 Error Identification)`,
+          `form[action="${action}"]`,
+        ),
+      );
+    }
+
+    if (hasRoleAlert.length === 0) {
+      issues.push(
+        makeIssue(
+          url,
+          "error-identification",
+          "serious",
+          `Form (action="${action || "self"}") does not announce errors via role="alert" after empty submission (WCAG 3.3.1 Error Identification)`,
+          `form[action="${action}"]`,
+        ),
+      );
+    }
+
+    if (hasAriaInvalid.length > 0 && hasAriaDescribedby.length === 0) {
+      issues.push(
+        makeIssue(
+          url,
+          "error-identification",
+          "moderate",
+          `Form (action="${action || "self"}") sets aria-invalid but lacks aria-describedby to describe the error (WCAG 3.3.3 Error Suggestion)`,
+          `form[action="${action}"]`,
+        ),
+      );
+    }
+  }
+
+  return issues;
+}
