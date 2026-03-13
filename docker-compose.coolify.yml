@@ -67,10 +67,13 @@ services:
     networks:
       - coolify
     environment:
-      - MAX_CONCURRENT_SESSIONS=2
+      - CONCURRENT=3
       - CONNECTION_TIMEOUT=600000
       - TIMEOUT=600000
       - HEALTH=true
+      - MAX_MEMORY_PERCENT=80
+      - MAX_CPU_PERCENT=85
+      - CHROME_FLAGS=--disable-dev-shm-usage --disable-gpu --disable-extensions --disable-background-networking --no-zygote --disable-background-timer-throttling --disable-renderer-backgrounding
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/json/version"]
       interval: 10s

@@ -1,4 +1,5 @@
 import postgres, { type JSONValue } from "postgres";
+import type { SpanRecord, PageCapabilities } from "../types/pipeline";
 
 let db: ReturnType<typeof postgres>;
 
@@ -46,20 +47,6 @@ export async function claimNextAudit(): Promise<AuditJob | null> {
     url: rows[0].url,
     config: typeof rows[0].config === "string" ? JSON.parse(rows[0].config) : rows[0].config,
   };
-}
-
-/**
- * Update audit progress (pages analyzed count).
- */
-export async function updateAuditProgress(auditId: string, pagesAnalyzed: number): Promise<void> {
-  await db`
-    UPDATE audits SET summary = jsonb_set(
-      COALESCE(summary, '{}'::jsonb),
-      '{pagesAnalyzed}',
-      ${pagesAnalyzed}::text::jsonb
-    )
-    WHERE id = ${auditId}
-  `;
 }
 
 /**
@@ -218,4 +205,97 @@ export async function insertSharedIssues(
       `;
     }
   });
+}
+
+/**
+ * Persist observability spans for an audit.
+ */
+export async function persistSpans(spans: SpanRecord[]): Promise<void> {
+  if (spans.length === 0) return;
+  for (const s of spans) {
+    await db`
+      INSERT INTO audit_spans
+        (audit_id, trace_id, span_id, parent_span_id, name,
+         started_at, ended_at, status, error_message, metadata)
+      VALUES
+        (${s.auditId}, ${s.traceId}, ${s.spanId}, ${s.parentSpanId}, ${s.name},
+         ${s.startedAt}, ${s.endedAt}, ${s.status}, ${s.errorMessage}, ${json(s.metadata)})
+    `;
+  }
+}
+
+/**
+ * Insert a page result for the v4 pipeline (with template/fingerprint/capabilities support).
+ */
+export async function insertPageV4(
+  auditId: string,
+  page: {
+    url: string;
+    title?: string;
+    templateId?: string;
+    isRepresentative?: boolean;
+    fingerprint?: string;
+    elementCount?: number;
+    capabilities?: PageCapabilities;
+    issueCount?: number;
+    issuesByImpact?: Record<string, number>;
+    durationMs?: number;
+  },
+): Promise<string> {
+  const [row] = await db`
+    INSERT INTO pages (audit_id, url, title, template_id, is_representative,
+                       fingerprint, element_count, capabilities,
+                       issue_count, issues_by_impact, duration_ms)
+    VALUES (${auditId}, ${page.url}, ${page.title ?? ""},
+            ${page.templateId ?? null}, ${page.isRepresentative ?? false},
+            ${page.fingerprint ?? null}, ${page.elementCount ?? null},
+            ${page.capabilities ? json(page.capabilities) : null},
+            ${page.issueCount ?? 0}, ${json(page.issuesByImpact ?? {})},
+            ${page.durationMs ?? 0})
+    RETURNING id
+  `;
+  return row.id;
+}
+
+/**
+ * Insert issues for the v4 pipeline (with template amplification support).
+ */
+export async function insertIssuesV4(
+  auditId: string,
+  pageId: string,
+  issues: Array<{
+    rule: string;
+    impact: string;
+    description?: string;
+    help?: string;
+    helpUrl?: string;
+    wcagTags?: string[];
+    selector?: string;
+    html?: string;
+    xpath?: string;
+    checkSource: string;
+    category?: string;
+    suggestedFix?: string;
+    fixConfidence?: number | null;
+    templateId?: string | null;
+    affectedPages?: number;
+    amplifiedFrom?: string | null;
+  }>,
+): Promise<void> {
+  if (issues.length === 0) return;
+  for (const i of issues) {
+    await db`
+      INSERT INTO issues
+        (audit_id, page_id, rule, impact, description, help, help_url,
+         wcag_tags, selector, html, xpath, check_source, category,
+         suggested_fix, fix_confidence, template_id, affected_pages, amplified_from)
+      VALUES
+        (${auditId}, ${pageId}, ${i.rule}, ${i.impact},
+         ${i.description ?? ""}, ${i.help ?? ""}, ${i.helpUrl ?? ""},
+         ${json(i.wcagTags ?? [])}, ${i.selector ?? ""}, ${i.html ?? ""},
+         ${i.xpath ?? ""}, ${i.checkSource}, ${i.category ?? "structural"},
+         ${i.suggestedFix ?? ""}, ${i.fixConfidence ?? null},
+         ${i.templateId ?? null}, ${i.affectedPages ?? 1}, ${i.amplifiedFrom ?? null})
+    `;
+  }
 }
