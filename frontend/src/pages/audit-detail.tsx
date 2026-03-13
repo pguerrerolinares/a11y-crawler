@@ -120,7 +120,7 @@ export default function AuditDetail() {
 
       {audit.status === "completed" && audit.summary && (
         <>
-          <StatsCards summary={audit.summary} />
+          <StatsCards summary={audit.summary} wcagScore={audit.wcagScore} />
 
           <Tabs defaultValue="issues">
             <TabsList>

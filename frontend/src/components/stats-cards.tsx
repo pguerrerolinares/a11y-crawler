@@ -8,15 +8,17 @@ interface StatsCardsProps {
     totalPages?: number;
     issuesByImpact?: Record<string, number>;
   };
+  wcagScore?: number | null;
 }
 
-export function StatsCards({ summary }: StatsCardsProps) {
+export function StatsCards({ summary, wcagScore }: StatsCardsProps) {
   const { totalIssues = 0, totalPages = 0, issuesByImpact = {} } = summary ?? {};
 
   const critical = issuesByImpact["critical"] ?? 0;
+  const serious = issuesByImpact["serious"] ?? 0;
   const warnings = (issuesByImpact["moderate"] ?? 0) + (issuesByImpact["minor"] ?? 0);
-  const passed = Math.max(0, totalPages - (issuesByImpact["critical"] ?? 0) - (issuesByImpact["serious"] ?? 0));
-  const score = Math.max(0, Math.min(100, Math.round(100 - (totalIssues / Math.max(1, totalPages)) * 10)));
+  const passed = Math.max(0, totalPages - critical - serious);
+  const score = wcagScore ?? Math.max(0, Math.min(100, Math.round(100 - (totalIssues / Math.max(1, totalPages)) * 10)));
 
   const radius = 36;
   const strokeWidth = 6;
