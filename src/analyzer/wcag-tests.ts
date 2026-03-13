@@ -415,7 +415,7 @@ export async function testTargetSize(page: Page, url: string): Promise<Issue[]> 
       for (const el of document.querySelectorAll(selector)) {
         const rect = el.getBoundingClientRect();
         // Skip hidden elements
-        if (rect.width === 0 && rect.height === 0) continue;
+        if (rect.width === 0 || rect.height === 0) continue;
         if (rect.width < minSize || rect.height < minSize) {
           const css =
             el.id ? `#${el.id}` :
@@ -453,7 +453,7 @@ export async function testTargetSize(page: Page, url: string): Promise<Issue[]> 
  * Safety: skips payment/auth forms, detects navigation post-submit, never fills fields.
  */
 export async function testErrorIdentification(page: Page, url: string): Promise<Issue[]> {
-  const SKIP_ACTIONS = /payment|checkout|stripe|paypal|oauth|login|signin|signup|register/i;
+  const SKIP_ACTIONS = /payment|checkout|stripe|paypal|oauth|login|signin|signup|register|delete|unsubscribe|cancel|settings|account|admin/i;
   const issues: Issue[] = [];
 
   const forms = await page.$$("form");
@@ -490,12 +490,14 @@ export async function testErrorIdentification(page: Page, url: string): Promise<
           `form[action="${action}"]`,
         ),
       );
+      // If goBack failed, we're on the wrong page — stop processing forms
+      if (page.url() !== urlBefore) break;
       continue;
     }
 
     // Check for accessible error indicators
     const hasAriaInvalid = await form.$$('[aria-invalid="true"]');
-    const hasRoleAlert = await page.$$('[role="alert"]');
+    const hasRoleAlert = await form.$$('[role="alert"]');
     const hasAriaDescribedby = await form.$$('[aria-invalid="true"][aria-describedby]');
 
     if (hasAriaInvalid.length === 0) {
