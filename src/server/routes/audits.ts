@@ -113,5 +113,7 @@ function mapAuditRow(row: Record<string, unknown>): AuditResponse {
     wcagScore: row.wcag_score,
     durationSeconds: row.duration_seconds,
     crawlErrors: row.crawl_errors,
-  };
+    templateClusters: row.template_clusters,
+    regression: row.regression,
+  } as AuditResponse;
 }
