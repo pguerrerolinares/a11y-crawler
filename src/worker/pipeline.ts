@@ -3,7 +3,10 @@ import type { Browser } from "playwright";
 import type { PipelineConfig, CrawlError } from "../types/pipeline";
 import type { LLMClient } from "../llm/client";
 import { AuditTracer } from "./tracer";
-import { persistSpans, markAuditCompleted, markAuditFailed, emitAuditEvent } from "./db";
+import { persistSpans, markAuditCompleted, markAuditFailed, emitAuditEvent, getIssueCountsByImpact, getPreviousAudit, getIssuesByTemplateId, updateAuditRegression } from "./db";
+import { matchTemplatesAcrossAudits, computeRegressionDiff } from "../analyzer/regression";
+import type { SerializedCluster } from "../analyzer/regression";
+import { computeWcagScore } from "../reporter/wcag-score";
 import { runScanPhase } from "./scan";
 import { runProbePhase } from "./probe";
 import { clusterPages, buildTestPlan, selectRepresentative, prioritizeTemplates } from "../analyzer/classify";
@@ -151,11 +154,29 @@ export async function runPipeline(
       const endMemory = process.memoryUsage().heapUsed;
       auditSpan.setMeta({ endMemoryMb: Math.round(endMemory / 1024 / 1024), durationSeconds });
 
+      // Compute WCAG score from persisted issues
+      const issuesByImpact = await getIssueCountsByImpact(auditId);
+      const wcagScore = computeWcagScore(issuesByImpact, scanResults.size);
+
+      // Serialize template clusters (slim format — no lightIssues)
+      const serializedClusters = templates.map((t) => ({
+        id: t.id,
+        fingerprint: t.fingerprint.toString(16),
+        urlPattern: t.urlPattern,
+        urls: t.urls,
+        representative: t.representative,
+        capabilities: t.capabilities,
+        testPlan: t.testPlan,
+      }));
+
       // Build summary
+      const totalIssues = issuesByImpact.critical + issuesByImpact.serious + issuesByImpact.moderate + issuesByImpact.minor;
       const summary = {
         totalPages: scanResults.size,
         totalTemplates: templates.length,
-        pipelineVersion: "v4.0",
+        totalIssues,
+        issuesByImpact,
+        pipelineVersion: "v4.1",
       };
 
       await markAuditCompleted(
@@ -164,11 +185,43 @@ export async function runPipeline(
         { totalUrlsDiscovered: scanResults.size, urlsFromSitemap: 0, urlsFromLinks: scanResults.size, urlsFromInteraction: 0 },
         (llmClient?.usage ?? { totalCalls: 0, totalInputTokens: 0, totalOutputTokens: 0, navigationCalls: 0, enrichmentCalls: 0 }) as unknown as Record<string, unknown>,
         durationSeconds,
-        null, // wcag_score computed separately if needed
+        wcagScore,
         crawlErrors.length > 0 ? crawlErrors : null,
+        serializedClusters,
       );
 
       await emitAuditEvent(auditId, "audit:complete", { durationSeconds });
+
+      // ── Regression diff (post-step, non-fatal) ──
+      try {
+        const domain = new URL(config.baseUrl).hostname;
+        const prevAudit = await getPreviousAudit(auditId, domain);
+        if (prevAudit && Array.isArray(prevAudit.templateClusters)) {
+          const currentIssues = await getIssuesByTemplateId(auditId);
+          const previousIssues = await getIssuesByTemplateId(prevAudit.id);
+
+          const matched = matchTemplatesAcrossAudits(
+            serializedClusters as SerializedCluster[],
+            prevAudit.templateClusters as SerializedCluster[],
+          );
+
+          const diff = computeRegressionDiff(
+            matched,
+            currentIssues,
+            previousIssues,
+            serializedClusters,
+            prevAudit.templateClusters as Array<{ id: string; urlPattern: string }>,
+            prevAudit.id,
+            prevAudit.finishedAt,
+            wcagScore,
+            prevAudit.wcagScore,
+          );
+
+          await updateAuditRegression(auditId, diff);
+        }
+      } catch (err) {
+        console.warn("Regression diff failed (non-fatal):", err instanceof Error ? err.message : err);
+      }
     });
   } catch (err) {
     await markAuditFailed(auditId, err instanceof Error ? err.message : String(err));
