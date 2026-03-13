@@ -35,13 +35,11 @@ async function runMigrations(conn: InstanceType<typeof SQL>) {
   // Migration: clean legacy data for v4 pipeline
   if (!appliedSet.has("v4-clean")) {
     console.log("Running migration: v4-clean");
-    await conn.unsafe(`
-      BEGIN;
-      TRUNCATE audits CASCADE;
-      DROP TABLE IF EXISTS shared_issues;
-      INSERT INTO migrations (id) VALUES ('v4-clean');
-      COMMIT;
-    `);
+    await conn.begin(async (tx) => {
+      await tx.unsafe(`TRUNCATE audits CASCADE`);
+      await tx.unsafe(`DROP TABLE IF EXISTS shared_issues`);
+      await tx.unsafe(`INSERT INTO migrations (id) VALUES ('v4-clean')`);
+    });
     console.log("Migration v4-clean applied");
   }
 }
