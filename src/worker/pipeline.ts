@@ -46,7 +46,11 @@ export async function runPipeline(
 
       // ── Seed URLs (base + sitemap) ──
       const queue = new UrlQueue(config.maxPages, config.maxDepth);
-      queue.seed([config.baseUrl], "link", 0);
+      // Seed both the user-provided URL and the resolved (post-redirect) URL
+      // so the queue deduplicates them (e.g. finnk.com → www.finnk.com)
+      const resolvedUrl = new URL(config.baseUrl);
+      resolvedUrl.host = new URL(resolvedOrigin).host;
+      queue.seed([config.baseUrl, resolvedUrl.href], "link", 0);
 
       // Discover sitemap URLs
       try {

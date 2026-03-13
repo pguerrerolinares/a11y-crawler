@@ -18,6 +18,7 @@ export const IssueFilterSchema = PaginationSchema.extend({
   impact: z.string().optional(),
   rule: z.string().optional(),
   category: z.string().optional(),
+  source: z.string().optional(),
 });
 
 export const LogFilterSchema = PaginationSchema.extend({
