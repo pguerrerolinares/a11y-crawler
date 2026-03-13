@@ -74,6 +74,7 @@ export async function markAuditCompleted(
   durationSeconds: number,
   wcagScore: number | null,
   crawlErrors: unknown[] | null,
+  templateClusters: unknown[] | null,
 ): Promise<void> {
   await db`
     UPDATE audits
@@ -84,9 +85,31 @@ export async function markAuditCompleted(
         llm_usage = ${json(llmUsage)},
         duration_seconds = ${durationSeconds},
         wcag_score = ${wcagScore},
-        crawl_errors = ${crawlErrors ? json(crawlErrors) : null}
+        crawl_errors = ${crawlErrors ? json(crawlErrors) : null},
+        template_clusters = ${templateClusters ? json(templateClusters) : null}
     WHERE id = ${auditId}
   `;
+}
+
+/**
+ * Get issue counts by impact level for an audit (for WCAG score computation).
+ */
+export async function getIssueCountsByImpact(
+  auditId: string,
+): Promise<{ critical: number; serious: number; moderate: number; minor: number }> {
+  const rows = await db`
+    SELECT impact, COUNT(*)::int as count
+    FROM issues
+    WHERE audit_id = ${auditId}
+    GROUP BY impact
+  `;
+  const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+  for (const row of rows) {
+    if (row.impact in counts) {
+      counts[row.impact as keyof typeof counts] = row.count;
+    }
+  }
+  return counts;
 }
 
 /**
@@ -298,4 +321,62 @@ export async function insertIssuesV4(
          ${i.templateId ?? null}, ${i.affectedPages ?? 1}, ${i.amplifiedFrom ?? null})
     `;
   }
+}
+
+/**
+ * Get the most recent completed audit for the same domain (excluding current).
+ */
+export async function getPreviousAudit(
+  auditId: string,
+  domain: string,
+): Promise<{ id: string; templateClusters: unknown[]; wcagScore: number | null; finishedAt: string } | null> {
+  const rows = await db`
+    SELECT id, template_clusters, wcag_score, finished_at
+    FROM audits
+    WHERE url LIKE ${"%" + domain + "%"}
+      AND status = 'completed'
+      AND id != ${auditId}
+      AND template_clusters IS NOT NULL
+    ORDER BY finished_at DESC
+    LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+  return {
+    id: rows[0].id,
+    templateClusters: rows[0].template_clusters,
+    wcagScore: rows[0].wcag_score,
+    finishedAt: rows[0].finished_at,
+  };
+}
+
+/**
+ * Get all issues grouped by template_id for an audit.
+ */
+export async function getIssuesByTemplateId(
+  auditId: string,
+): Promise<Map<string, Array<{ rule: string; impact: string }>>> {
+  const rows = await db`
+    SELECT template_id, rule, impact
+    FROM issues
+    WHERE audit_id = ${auditId} AND template_id IS NOT NULL
+  `;
+  const map = new Map<string, Array<{ rule: string; impact: string }>>();
+  for (const row of rows) {
+    const key = row.template_id as string;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push({ rule: row.rule, impact: row.impact });
+  }
+  return map;
+}
+
+/**
+ * Persist regression diff to an audit.
+ */
+export async function updateAuditRegression(
+  auditId: string,
+  regression: unknown,
+): Promise<void> {
+  await db`
+    UPDATE audits SET regression = ${json(regression)} WHERE id = ${auditId}
+  `;
 }
