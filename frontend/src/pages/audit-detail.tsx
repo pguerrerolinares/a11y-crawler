@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { QueryError } from "@/components/error-boundary";
 import { Trash2, ArrowLeft, Globe, Clock, AlertTriangle, Download } from "lucide-react";
+import { RegressionTab } from "@/components/regression-tab";
 
 export default function AuditDetail() {
   const { id } = useParams<{ id: string }>();
@@ -127,6 +128,7 @@ export default function AuditDetail() {
               <TabsTrigger value="pages">Pages</TabsTrigger>
               <TabsTrigger value="shared">Shared</TabsTrigger>
               <TabsTrigger value="summary">Summary</TabsTrigger>
+              {audit.regression && <TabsTrigger value="regression">Regresión</TabsTrigger>}
             </TabsList>
 
             <TabsContent value="issues" className="mt-4">
@@ -198,6 +200,12 @@ export default function AuditDetail() {
                 </CardContent>
               </Card>
             </TabsContent>
+
+            {audit.regression && (
+              <TabsContent value="regression" className="mt-4">
+                <RegressionTab regression={audit.regression} />
+              </TabsContent>
+            )}
           </Tabs>
         </>
       )}
