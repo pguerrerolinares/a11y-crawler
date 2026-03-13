@@ -8,6 +8,27 @@ export interface CreateAuditRequest {
   noEnrich?: boolean;
 }
 
+export interface RegressionDiff {
+  previousAuditId: string;
+  previousAuditDate: string;
+  matched: Array<{
+    currentTemplateId: string;
+    previousTemplateId: string;
+    matchMethod: "url-pattern" | "fingerprint-near" | "representative-url";
+    newIssues: Array<{ rule: string; impact: string; count: number }>;
+    resolvedIssues: Array<{ rule: string; impact: string; count: number }>;
+  }>;
+  unmatchedNew: string[];
+  unmatchedRemoved: string[];
+  scoreChange: number | null;
+  summary: {
+    totalNewIssues: number;
+    totalResolvedIssues: number;
+    newTemplates: number;
+    removedTemplates: number;
+  };
+}
+
 export interface AuditResponse {
   id: string;
   url: string;
@@ -23,6 +44,8 @@ export interface AuditResponse {
   wcagScore: number | null;
   durationSeconds: number | null;
   crawlErrors: Array<{ url: string; phase: string; message: string; timestamp: string }> | null;
+  templateClusters: unknown[] | null;
+  regression: RegressionDiff | null;
 }
 
 export interface PageResponse {
@@ -49,7 +72,7 @@ export interface IssueResponse {
   html: string | null;
   category: string | null;
   suggestedFix: string | null;
-  checkSource: "axe" | "interactive" | "llm";
+  checkSource: string;
   createdAt: string;
 }
 
