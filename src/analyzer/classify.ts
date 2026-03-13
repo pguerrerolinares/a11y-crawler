@@ -36,9 +36,10 @@ export function clusterPages(scanResults: ScanResult[]): TemplateCluster[] {
 }
 
 export function buildTestPlan(cluster: TemplateCluster): TestType[] {
-  const plan: TestType[] = ["axe-full", "interactive", "reflow", "text-spacing", "resize-text"];
+  const plan: TestType[] = ["axe-full", "interactive", "reflow", "text-spacing", "resize-text", "target-size"];
   if (cluster.capabilities.hasMedia) plan.push("multimedia", "timed-events");
   if (cluster.capabilities.hasCarousel) plan.push("timed-events");
+  if (cluster.capabilities.hasForms) plan.push("error-identification");
   return [...new Set(plan)];
 }
 

@@ -27,7 +27,9 @@ export type TestType =
   | "text-spacing"
   | "resize-text"
   | "multimedia"
-  | "timed-events";
+  | "timed-events"
+  | "target-size"
+  | "error-identification";
 
 export interface TemplateCluster {
   id: string;
