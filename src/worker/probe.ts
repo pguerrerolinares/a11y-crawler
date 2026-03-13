@@ -7,7 +7,7 @@ import { ProbeContextManager } from "./probe-context";
 import { insertPageV4, insertIssuesV4 } from "./db";
 import { injectConsentPrehideCSS } from "../analyzer/consent-blocker";
 import { runInteractiveTests } from "../analyzer/interactive";
-import { testReflow, testTextSpacing, testResizeText, testMultimedia, testTimedEvents, testTargetSize, testErrorIdentification } from "../analyzer/wcag-tests";
+import { testReflow, testTextSpacing, testResizeText, testMultimedia, testTimedEvents, testTargetSize, testErrorIdentification, testNonTextContrast } from "../analyzer/wcag-tests";
 import { AuditTracer } from "./tracer";
 
 const TEMPLATE_LEVEL_RULES = new Set([
@@ -63,6 +63,7 @@ export async function runProbePhase(
           if (cluster.testPlan.includes("target-size")) evaluateTests.push(testTargetSize(page, url));
           if (cluster.testPlan.includes("multimedia")) evaluateTests.push(testMultimedia(page, url));
           if (cluster.testPlan.includes("timed-events")) evaluateTests.push(testTimedEvents(page, url));
+          if (cluster.testPlan.includes("non-text-contrast")) evaluateTests.push(testNonTextContrast(page, url));
           const evaluateResults = await Promise.all(evaluateTests);
           allIssues.push(...evaluateResults.flat());
 
