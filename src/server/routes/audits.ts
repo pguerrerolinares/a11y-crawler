@@ -1,6 +1,7 @@
 import { getDb } from "../db/client.ts";
 import { CreateAuditSchema, PaginationSchema } from "../types.ts";
 import type { AuditResponse } from "../types.ts";
+import { computeWcagScore } from "../../reporter/wcag-score.ts";
 
 
 export async function handleAudits(req: Request, url: URL): Promise<Response> {
@@ -88,7 +89,39 @@ async function getAudit(id: string): Promise<Response> {
   const db = getDb();
   const [audit] = await db`SELECT * FROM audits WHERE id = ${id}`;
   if (!audit) return Response.json({ error: "Not Found" }, { status: 404 });
-  return Response.json(mapAuditRow(audit));
+
+  const mapped = mapAuditRow(audit);
+
+  // Enrich summary with issue counts from DB if missing (v4.0 audits)
+  if (mapped.status === "completed" && mapped.summary) {
+    const summary = mapped.summary as Record<string, unknown>;
+    if (summary.totalIssues === undefined || summary.issuesByImpact === undefined) {
+      const rows = await db`
+        SELECT impact, COUNT(*)::int as count
+        FROM issues WHERE audit_id = ${id}
+        GROUP BY impact
+      `;
+      const issuesByImpact: Record<string, number> = { critical: 0, serious: 0, moderate: 0, minor: 0 };
+      let totalIssues = 0;
+      for (const row of rows) {
+        issuesByImpact[row.impact] = row.count;
+        totalIssues += row.count;
+      }
+      summary.totalIssues = totalIssues;
+      summary.issuesByImpact = issuesByImpact;
+
+      // Compute wcagScore if missing
+      if (mapped.wcagScore === null) {
+        const totalPages = (summary.totalPages as number) ?? 0;
+        mapped.wcagScore = computeWcagScore(
+          issuesByImpact as { critical: number; serious: number; moderate: number; minor: number },
+          totalPages,
+        );
+      }
+    }
+  }
+
+  return Response.json(mapped);
 }
 
 async function deleteAudit(id: string): Promise<Response> {
