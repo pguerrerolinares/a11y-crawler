@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Page } from "playwright";
 import type { Issue } from "../types/issue.ts";
+import { buildCssSelector } from "./utils";
 
 /**
  * Run all interactive accessibility tests on a page.
@@ -86,7 +87,7 @@ async function testTabOrder(page: Page, pageUrl: string): Promise<Issue[]> {
       let selector = el.tagName.toLowerCase();
       if (el.id) selector = `#${el.id}`;
       else if (el.className && typeof el.className === "string") {
-        const cls = el.className.trim().split(/\s+/).slice(0, 2).join(".");
+        const cls = el.className.trim().split(/\s+/).slice(0, 3).join(".");
         if (cls) selector = `${el.tagName.toLowerCase()}.${cls}`;
       }
 
@@ -189,7 +190,7 @@ async function testFocusVisibility(page: Page, pageUrl: string): Promise<Issue[]
           if (e.id) return `#${e.id}`;
           const tag = e.tagName.toLowerCase();
           if (e.className && typeof e.className === "string") {
-            const cls = e.className.trim().split(/\s+/).slice(0, 2).join(".");
+            const cls = e.className.trim().split(/\s+/).slice(0, 3).join(".");
             if (cls) return `${tag}.${cls}`;
           }
           return tag;
@@ -280,7 +281,7 @@ async function testKeyboardOperability(page: Page, pageUrl: string): Promise<Iss
           let selector = el.tagName.toLowerCase();
           if (el.id) selector = `#${el.id}`;
           else if (el.className && typeof el.className === "string") {
-            const cls = el.className.trim().split(/\s+/).slice(0, 2).join(".");
+            const cls = el.className.trim().split(/\s+/).slice(0, 3).join(".");
             if (cls) selector = `${el.tagName.toLowerCase()}.${cls}`;
           }
           return {

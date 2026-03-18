@@ -1,6 +1,7 @@
 import type { Page } from "playwright";
 import type { Issue, ImpactLevel } from "../types/issue";
 import { parseRgba, alphaBlend, relativeLuminance, contrastRatio } from "./contrast";
+import { buildCssSelector } from "./utils";
 
 function makeIssue(
   url: string,
@@ -147,7 +148,7 @@ export async function testTextSpacing(page: Page, url: string): Promise<Issue[]>
           const selector =
             el.id ? `#${el.id}` :
             el.className && typeof el.className === "string"
-              ? `${el.tagName.toLowerCase()}.${el.className.trim().split(/\s+/).join(".")}`
+              ? `${el.tagName.toLowerCase()}.${el.className.trim().split(/\s+/).slice(0, 3).join(".")}`
               : el.tagName.toLowerCase();
           results.push({ selector });
         }
@@ -630,7 +631,7 @@ export async function testNonTextContrast(page: Page, url: string): Promise<Issu
       function cssSelector(el: Element): string {
         if (el.id) return `#${el.id}`;
         if (el.className && typeof el.className === "string") {
-          return `${el.tagName.toLowerCase()}.${el.className.trim().split(/\s+/).join(".")}`;
+          return `${el.tagName.toLowerCase()}.${el.className.trim().split(/\s+/).slice(0, 3).join(".")}`;
         }
         return el.tagName.toLowerCase();
       }
