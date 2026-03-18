@@ -312,30 +312,64 @@ async function testKeyboardOperability(page: Page, pageUrl: string): Promise<Iss
       if (!handle) continue;
 
       await handle.focus();
-      const domBefore = await page.evaluate(() => document.body.innerHTML.length);
       const urlBefore = page.url();
+
+      // Snapshot: aria-expanded, aria-pressed, aria-checked on the element
+      const stateBefore = await handle.evaluate((el) => ({
+        ariaExpanded: el.getAttribute("aria-expanded"),
+        ariaPressed: el.getAttribute("aria-pressed"),
+        ariaChecked: el.getAttribute("aria-checked"),
+      }));
 
       await page.keyboard.press("Enter");
       await page.waitForTimeout(500);
 
-      const domAfter = await page.evaluate(() => document.body.innerHTML.length);
       const urlAfter = page.url();
 
-      if (urlBefore === urlAfter && Math.abs(domBefore - domAfter) < 10) {
+      // URL changed = element is operable (navigation occurred)
+      if (urlAfter !== urlBefore) {
+        await page.goBack({ waitUntil: "domcontentloaded", timeout: 5000 }).catch(() => {});
+        continue; // Not a violation — element worked
+      }
+
+      // Check if any ARIA state changed
+      const stateAfter = await handle.evaluate((el) => ({
+        ariaExpanded: el.getAttribute("aria-expanded"),
+        ariaPressed: el.getAttribute("aria-pressed"),
+        ariaChecked: el.getAttribute("aria-checked"),
+      })).catch(() => stateBefore);
+
+      const stateChanged =
+        stateBefore.ariaExpanded !== stateAfter.ariaExpanded ||
+        stateBefore.ariaPressed !== stateAfter.ariaPressed ||
+        stateBefore.ariaChecked !== stateAfter.ariaChecked;
+
+      // Check if any new visible element appeared (controlled element)
+      const controlledAppeared = await handle.evaluate((el) => {
+        const controlsId = el.getAttribute("aria-controls");
+        if (controlsId) {
+          const target = document.getElementById(controlsId);
+          if (target) return getComputedStyle(target).display !== "none";
+        }
+        // Check next sibling as fallback
+        const next = el.nextElementSibling;
+        if (next && getComputedStyle(next).display !== "none") {
+          const prevDisplay = next.getAttribute("data-prev-display");
+          return prevDisplay !== null; // Changed visibility
+        }
+        return false;
+      }).catch(() => false);
+
+      if (!stateChanged && !controlledAppeared) {
         issues.push(createInteractiveIssue({
           url: pageUrl,
           rule: "keyboard-operability",
           impact: "critical",
-          description: `Element with role="${suspect.role}" does not respond to keyboard activation`,
+          description: `Element with role="${suspect.role}" does not respond to keyboard activation (Enter key)`,
           selector: suspect.selector,
           help: "All interactive elements must be operable via keyboard (Enter/Space).",
           wcagCriterion: "keyboard",
         }));
-      }
-
-      // Navigate back if URL changed
-      if (urlAfter !== urlBefore) {
-        await page.goBack({ waitUntil: "networkidle", timeout: 5000 }).catch(() => {});
       }
     } catch {
       // Element interaction failed — skip
