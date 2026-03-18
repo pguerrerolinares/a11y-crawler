@@ -4,6 +4,7 @@ export interface LLMConfig {
   apiKey: string;
   baseUrl: string;
   model: string;
+  visionModel?: string; // e.g. "moonshot-v1-32k-vision-preview"
   rateLimitRpm: number;
 }
 
@@ -24,6 +25,7 @@ export interface LLMUsageTracker {
 export class LLMClient {
   private client: OpenAI;
   private model: string;
+  private visionModel: string | null;
   private bucket: TokenBucket;
   private maxRetries = 5;
   private circuitBreakerFailures = 0;
@@ -42,6 +44,7 @@ export class LLMClient {
       baseURL: config.baseUrl,
     });
     this.model = config.model;
+    this.visionModel = config.visionModel ?? null;
     this.bucket = new TokenBucket(config.rateLimitRpm);
   }
 
@@ -85,6 +88,51 @@ export class LLMClient {
 
     this.circuitBreakerFailures++;
     return null;
+  }
+
+  /** Chat using vision model (for screenshot analysis). Falls back to null if no vision model configured. */
+  async chatVision(
+    messages: OpenAI.ChatCompletionMessageParam[],
+  ): Promise<LLMResponse | null> {
+    if (!this.visionModel) return null;
+    if (this.circuitBreakerFailures >= this.circuitBreakerThreshold) return null;
+
+    await this.bucket.waitForToken();
+
+    for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+      try {
+        const response = await this.client.chat.completions.create({
+          model: this.visionModel,
+          messages,
+          temperature: 0.1,
+          max_tokens: 500,
+        });
+
+        this.circuitBreakerFailures = 0;
+        const result: LLMResponse = {
+          content: response.choices[0]?.message?.content || "",
+          inputTokens: response.usage?.prompt_tokens || 0,
+          outputTokens: response.usage?.completion_tokens || 0,
+        };
+
+        this.usage.totalCalls++;
+        this.usage.totalInputTokens += result.inputTokens;
+        this.usage.totalOutputTokens += result.outputTokens;
+        this.usage.enrichmentCalls++;
+
+        return result;
+      } catch {
+        const waitMs = Math.pow(2, attempt) * 1000;
+        await new Promise((r) => setTimeout(r, waitMs));
+      }
+    }
+
+    this.circuitBreakerFailures++;
+    return null;
+  }
+
+  get hasVision(): boolean {
+    return this.visionModel !== null;
   }
 }
 

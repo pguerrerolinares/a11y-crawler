@@ -97,6 +97,7 @@ async function main() {
               apiKey: process.env.LLM_API_KEY,
               baseUrl: process.env.LLM_BASE_URL ?? "https://api.moonshot.ai/v1",
               model: process.env.LLM_MODEL ?? "kimi-k2-turbo-preview",
+              visionModel: process.env.LLM_VISION_MODEL ?? "moonshot-v1-32k-vision-preview",
               rateLimitRpm: 10,
             })
           : null;
