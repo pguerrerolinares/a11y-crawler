@@ -493,91 +493,88 @@ export async function testTargetSize(page: Page, url: string): Promise<Issue[]> 
 }
 
 /**
- * WCAG 3.3.1–3.3.3 — Error Identification: forms must provide accessible error messages
- * when submitted without filling required fields.
+ * WCAG 3.3.1–3.3.3 — Error Identification: forms must provide accessible error messages.
  *
- * Safety: skips payment/auth forms, detects navigation post-submit, never fills fields.
+ * Safety: uses checkValidity() instead of real form submit — no network requests, no side effects.
  */
 export async function testErrorIdentification(page: Page, url: string): Promise<Issue[]> {
-  const SKIP_ACTIONS = /payment|checkout|stripe|paypal|oauth|login|signin|signup|register|delete|unsubscribe|cancel|settings|account|admin/i;
   const issues: Issue[] = [];
-
   const forms = await page.$$("form");
 
   for (const form of forms) {
-    // Safety: skip payment/auth forms
-    const action = (await form.getAttribute("action")) ?? "";
-    if (SKIP_ACTIONS.test(action)) continue;
-
     // Skip forms without required fields
     const requiredFields = await form.$$('[required], [aria-required="true"]');
     if (requiredFields.length === 0) continue;
 
-    // Find submit button
-    const submitBtn = await form.$('button[type="submit"], input[type="submit"], button:not([type])');
-    if (!submitBtn) continue;
+    // Check 1: Does the form use HTML5 constraint validation?
+    const hasClientValidation = await form.evaluate((f) => {
+      // checkValidity triggers :invalid pseudo-class without submitting
+      const isValid = f.checkValidity();
+      return !isValid; // true = has invalid fields (good, means validation exists)
+    });
 
-    // Snapshot URL to detect navigation
-    const urlBefore = page.url();
-
-    // Submit without filling fields
-    await submitBtn.click();
-    await page.waitForTimeout(500);
-
-    // Detect navigation — go back immediately
-    if (page.url() !== urlBefore) {
-      await page.goBack({ waitUntil: "domcontentloaded" }).catch(() => {});
-      issues.push(
-        makeIssue(
-          url,
-          "error-identification",
-          "critical",
-          `Form (action="${action || "self"}") navigates on empty submission without client-side validation (WCAG 3.3.1 Error Identification)`,
-          `form[action="${action}"]`, "3.3.1",
-        ),
-      );
-      // If goBack failed, we're on the wrong page — stop processing forms
-      if (page.url() !== urlBefore) break;
+    if (!hasClientValidation) {
+      // Form has required fields but checkValidity passes — skip to be safe
       continue;
     }
 
-    // Check for accessible error indicators
-    const hasAriaInvalid = await form.$$('[aria-invalid="true"]');
-    const hasRoleAlert = await form.$$('[role="alert"]');
-    const hasAriaDescribedby = await form.$$('[aria-invalid="true"][aria-describedby]');
+    // Check 2: After triggering validation, are errors accessible?
+    const errorAccessibility = await form.evaluate((f) => {
+      // Trigger validation state on all fields
+      for (const el of f.elements) {
+        if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement) {
+          el.checkValidity();
+        }
+      }
 
-    if (hasAriaInvalid.length === 0) {
+      // Now check for accessible error patterns
+      const invalidFields = f.querySelectorAll(":invalid");
+      const ariaInvalidFields = f.querySelectorAll('[aria-invalid="true"]');
+      const roleAlerts = f.querySelectorAll('[role="alert"]');
+      const ariaDescribedbyOnInvalid = f.querySelectorAll('[aria-invalid="true"][aria-describedby]');
+
+      return {
+        invalidCount: invalidFields.length,
+        ariaInvalidCount: ariaInvalidFields.length,
+        roleAlertCount: roleAlerts.length,
+        ariaDescribedbyCount: ariaDescribedbyOnInvalid.length,
+      };
+    });
+
+    const formSelector = await form.evaluate((f) => {
+      const action = f.getAttribute("action") || "self";
+      return `form[action="${action}"]`;
+    });
+
+    // No aria-invalid on any field
+    if (errorAccessibility.ariaInvalidCount === 0 && errorAccessibility.invalidCount > 0) {
       issues.push(
         makeIssue(
-          url,
-          "error-identification",
-          "serious",
-          `Form (action="${action || "self"}") does not set aria-invalid="true" on fields after empty submission (WCAG 3.3.1 Error Identification)`,
-          `form[action="${action}"]`, "3.3.1",
+          url, "error-identification", "serious",
+          `Form has ${errorAccessibility.invalidCount} required fields but does not use aria-invalid="true" for error state (WCAG 3.3.1 Error Identification)`,
+          formSelector, "3.3.1",
         ),
       );
     }
 
-    if (hasRoleAlert.length === 0) {
+    // No role="alert" for error announcements
+    if (errorAccessibility.roleAlertCount === 0 && errorAccessibility.invalidCount > 0) {
       issues.push(
         makeIssue(
-          url,
-          "error-identification",
-          "serious",
-          `Form (action="${action || "self"}") does not announce errors via role="alert" after empty submission (WCAG 3.3.1 Error Identification)`,
-          `form[action="${action}"]`, "3.3.1",
+          url, "error-identification", "serious",
+          `Form does not use role="alert" to announce validation errors to assistive technology (WCAG 3.3.1 Error Identification)`,
+          formSelector, "3.3.1",
         ),
       );
     }
 
-    if (hasAriaInvalid.length > 0 && hasAriaDescribedby.length === 0) {
+    // Has aria-invalid but no aria-describedby to explain the error
+    if (errorAccessibility.ariaInvalidCount > 0 && errorAccessibility.ariaDescribedbyCount === 0) {
       issues.push(
         makeIssue(
-          url,
-          "error-identification",
-          "moderate",
-          `Form (action="${action || "self"}") sets aria-invalid but lacks aria-describedby to describe the error (WCAG 3.3.3 Error Suggestion)`,
-          `form[action="${action}"]`, "3.3.3",
+          url, "error-identification", "moderate",
+          `Form sets aria-invalid but lacks aria-describedby to describe the error (WCAG 3.3.3 Error Suggestion)`,
+          formSelector, "3.3.3",
         ),
       );
     }
