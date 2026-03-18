@@ -89,6 +89,8 @@ export async function runProbePhase(
           }
 
           // 3.5. New interactive tests (interaction + observation)
+          // Note: aria-states runs first as it clicks/resets widgets; hover-focus and
+          // status-messages follow since they depend on page state being close to initial.
           if (cluster.testPlan.includes("aria-states")) {
             allIssues.push(...await testAriaStates(page, url));
           }

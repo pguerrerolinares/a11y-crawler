@@ -48,7 +48,7 @@ const CATEGORY_MAP: Record<string, ViolationCategory> = {
   "meaningful-sequence-reorder": "structural",
   "semantic-pseudo-heading": "semantic",
   "semantic-pseudo-list": "semantic",
-  "semantic-pseudo-table": "semantic",
+  "semantic-pseudo-table": "semantic", // TODO: detection not yet implemented in wcag-semantic-structure.ts
   "semantic-missing-fieldset": "semantic",
   "aria-state-missing": "interactive",
   "hover-focus-not-persistent": "interactive",

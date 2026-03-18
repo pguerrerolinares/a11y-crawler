@@ -37,6 +37,7 @@ export async function testStatusMessages(page: Page, url: string): Promise<Issue
     if (requiredFields.length === 0) continue;
 
     // Inject MutationObserver before triggering validation
+    try {
     await page.evaluate(() => {
       (window as any).__statusMsgLog = [];
 
@@ -137,6 +138,10 @@ export async function testStatusMessages(page: Page, url: string): Promise<Issue
           `Status message "${msg.text}" appeared after form validation but lacks role="alert", role="status", or aria-live attribute`,
           formSelector));
       }
+    }
+    } catch {
+      // Ensure observer is disconnected on error path
+      await page.evaluate(() => (window as any).__statusMsgObs?.disconnect()).catch(() => {});
     }
   }
 
