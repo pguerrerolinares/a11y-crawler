@@ -51,7 +51,8 @@ export function computeKendallTau(visualRanks: number[]): number {
 export async function testMeaningfulSequence(page: Page, url: string): Promise<Issue[]> {
   const TAU_THRESHOLD = 0.8;
 
-  const violations = await page.evaluate((threshold: number) => {
+  // Single DOM traversal collects both tau violations and CSS reorder signals
+  const { violations, cssSignals } = await page.evaluate((threshold: number) => {
     const results: Array<{
       container: string;
       display: string;
@@ -60,10 +61,23 @@ export async function testMeaningfulSequence(page: Page, url: string): Promise<I
       domOrder: string[];
       visualOrder: string[];
     }> = [];
+    const signals: Array<{ selector: string; property: string; value: string }> = [];
 
     document.querySelectorAll("*").forEach((el) => {
       const style = getComputedStyle(el);
       const display = style.display;
+
+      // CSS reorder signal detection (runs for all elements, not just flex/grid)
+      if (parseInt(style.order) !== 0 && style.order !== "0") {
+        const sel = el.id ? `#${el.id}` : el.tagName.toLowerCase();
+        signals.push({ selector: sel, property: "order", value: style.order });
+      }
+      if (style.flexDirection?.includes("reverse")) {
+        const sel = el.id ? `#${el.id}` : el.tagName.toLowerCase();
+        signals.push({ selector: sel, property: "flex-direction", value: style.flexDirection });
+      }
+
+      // Kendall tau check only for flex/grid containers
       if (!display.includes("flex") && !display.includes("grid")) return;
 
       const children = Array.from(el.children)
@@ -128,25 +142,8 @@ export async function testMeaningfulSequence(page: Page, url: string): Promise<I
       }
     });
 
-    return results;
+    return { violations: results, cssSignals: signals };
   }, TAU_THRESHOLD);
-
-  // Also detect explicit CSS reorder signals
-  const cssSignals = await page.evaluate(() => {
-    const signals: Array<{ selector: string; property: string; value: string }> = [];
-    document.querySelectorAll("*").forEach((el) => {
-      const style = getComputedStyle(el);
-      if (parseInt(style.order) !== 0 && style.order !== "0") {
-        const sel = el.id ? `#${el.id}` : el.tagName.toLowerCase();
-        signals.push({ selector: sel, property: "order", value: style.order });
-      }
-      if (style.flexDirection?.includes("reverse")) {
-        const sel = el.id ? `#${el.id}` : el.tagName.toLowerCase();
-        signals.push({ selector: sel, property: "flex-direction", value: style.flexDirection });
-      }
-    });
-    return signals;
-  });
 
   const issues: Issue[] = [];
 
