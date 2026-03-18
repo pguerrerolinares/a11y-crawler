@@ -4,16 +4,17 @@
  */
 
 export function parseRgba(css: string): [number, number, number, number] | null {
-  const rgbaMatch = css.match(
-    /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/,
+  // Match both comma-separated: rgb(255, 0, 128) rgba(255, 0, 128, 0.5)
+  // and space-separated:        rgb(255 0 128)   rgb(255 0 128 / 0.5)
+  const m = css.match(
+    /rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)/,
   );
-  if (!rgbaMatch) return null;
-  return [
-    parseInt(rgbaMatch[1]),
-    parseInt(rgbaMatch[2]),
-    parseInt(rgbaMatch[3]),
-    rgbaMatch[4] !== undefined ? parseFloat(rgbaMatch[4]) : 1,
-  ];
+  if (!m) return null;
+  let alpha = 1;
+  if (m[4] !== undefined) {
+    alpha = m[4].endsWith("%") ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+  }
+  return [parseInt(m[1]), parseInt(m[2]), parseInt(m[3]), alpha];
 }
 
 export function alphaBlend(
