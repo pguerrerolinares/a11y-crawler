@@ -55,6 +55,12 @@ const CATEGORY_MAP: Record<string, ViolationCategory> = {
   "hover-focus-not-hoverable": "interactive",
   "hover-focus-not-dismissible": "interactive",
   "status-message-no-live-region": "interactive",
+  // v4.4 — LLM-augmented WCAG tests
+  "color-use-link-color-only": "visual",
+  "color-use-status-color-only": "visual",
+  "color-use-cvd": "visual",
+  "color-use-llm": "visual",
+  "sensory-instruction": "structural",
 };
 
 export function getViolationCategory(ruleId: string): ViolationCategory {
