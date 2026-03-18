@@ -98,6 +98,7 @@ async function tier1DomHeuristics(page: Page, url: string): Promise<Issue[]> {
       const title = el.getAttribute("title") ?? "";
       if (text.length > 0 || ariaLabel.length > 0 || title.length > 0) return;
 
+      const elStyle = getComputedStyle(el);
       const selector = el.id ? `#${el.id}` :
         el.className && typeof el.className === "string"
           ? `${el.tagName.toLowerCase()}.${el.className.trim().split(/\s+/).slice(0, 3).join(".")}`
@@ -105,7 +106,7 @@ async function tier1DomHeuristics(page: Page, url: string): Promise<Issue[]> {
       results.push({
         type: "status-color-only",
         selector,
-        detail: `Status indicator with background=${style.backgroundColor} but no accessible text`,
+        detail: `Status indicator with background=${elStyle.backgroundColor} but no accessible text`,
       });
     });
 
@@ -154,7 +155,8 @@ async function tier2CvdScreenshotDiff(page: Page): Promise<CvdDiffResult[]> {
       // CDP not available (e.g. Firefox) — skip
       console.warn(`CVD simulation (${deficiency}) failed:`, err instanceof Error ? err.message : err);
     } finally {
-      await client.detach();
+      await client.send("Emulation.setEmulatedVisionDeficiency", { type: "none" }).catch(() => {});
+      await client.detach().catch(() => {});
     }
   }
 
