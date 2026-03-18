@@ -63,7 +63,8 @@ export async function testMeaningfulSequence(page: Page, url: string): Promise<I
     }> = [];
     const signals: Array<{ selector: string; property: string; value: string }> = [];
 
-    document.querySelectorAll("*").forEach((el) => {
+    // Target elements realistically used as flex/grid containers (avoid full DOM traversal)
+    document.querySelectorAll("div, section, main, article, aside, nav, ul, ol, header, footer, form, details").forEach((el) => {
       const style = getComputedStyle(el);
       const display = style.display;
 
