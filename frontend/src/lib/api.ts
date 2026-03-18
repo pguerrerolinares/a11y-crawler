@@ -46,6 +46,7 @@ export interface AuditResponse {
   crawlErrors: Array<{ url: string; phase: string; message: string; timestamp: string }> | null;
   templateClusters: unknown[] | null;
   regression: RegressionDiff | null;
+  detectedRules: string[];
 }
 
 export interface PageResponse {
