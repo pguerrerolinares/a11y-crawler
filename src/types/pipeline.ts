@@ -36,7 +36,10 @@ export type TestType =
   | "meaningful-sequence"
   | "aria-states"
   | "status-messages"
-  | "semantic-structure";
+  | "semantic-structure"
+  // v4.4 — LLM-augmented WCAG tests
+  | "color-use"
+  | "sensory-instructions";
 
 export interface TemplateCluster {
   id: string;

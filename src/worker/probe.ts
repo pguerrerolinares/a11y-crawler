@@ -15,6 +15,8 @@ import { testSemanticStructure } from "../analyzer/wcag-semantic-structure";
 import { testAriaStates } from "../analyzer/wcag-aria-states";
 import { testStatusMessages } from "../analyzer/wcag-status-messages";
 import { testHoverFocus } from "../analyzer/wcag-hover-focus";
+import { testColorUse } from "../analyzer/wcag-color-use";
+import { testSensoryInstructions } from "../analyzer/wcag-sensory-instructions";
 
 const TEMPLATE_LEVEL_RULES = new Set([
   "color-contrast", "color-contrast-enhanced", "heading-order",
@@ -29,6 +31,10 @@ const TEMPLATE_LEVEL_RULES = new Set([
   "aria-state-missing",
   "hover-focus-not-persistent", "hover-focus-not-hoverable", "hover-focus-not-dismissible",
   "status-message-no-live-region",
+  // v4.4
+  "color-use-link-color-only", "color-use-status-color-only",
+  "color-use-cvd", "color-use-llm",
+  "sensory-instruction",
 ]);
 
 export async function runProbePhase(
@@ -116,6 +122,18 @@ export async function runProbePhase(
           // 5. Text spacing (CSS injection — modifies page, run last)
           if (cluster.testPlan.includes("text-spacing")) {
             allIssues.push(...await testTextSpacing(page, url));
+          }
+
+          // 6. CVD color analysis (screenshots — run after viewport tests restore)
+          if (cluster.testPlan.includes("color-use")) {
+            const r = await withTimeout(testColorUse(page, url, llmClient), 45_000);
+            if (r) allIssues.push(...r);
+          }
+
+          // 7. Sensory instructions (LLM text analysis — can run anytime)
+          if (cluster.testPlan.includes("sensory-instructions")) {
+            const r = await withTimeout(testSensoryInstructions(page, url, llmClient), 30_000);
+            if (r) allIssues.push(...r);
           }
 
           // --- Template amplification ---
