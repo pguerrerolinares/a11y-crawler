@@ -149,7 +149,7 @@ export async function runPipeline(
       // PHASE 3: PROBE
       // ══════════════════════════════════════════════
       await tracer.trace("audit:probe", async (probeSpan) => {
-        await runProbePhase(getBrowser, auditId, templates, config, tracer);
+        await runProbePhase(getBrowser, auditId, templates, config, tracer, llmClient);
         probeSpan.setMeta({ templatesProbed: templates.length });
       });
 

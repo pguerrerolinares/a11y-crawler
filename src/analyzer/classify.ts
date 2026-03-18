@@ -36,10 +36,17 @@ export function clusterPages(scanResults: ScanResult[]): TemplateCluster[] {
 }
 
 export function buildTestPlan(cluster: TemplateCluster): TestType[] {
-  const plan: TestType[] = ["axe-full", "interactive", "reflow", "text-spacing", "resize-text", "target-size", "non-text-contrast"];
+  const plan: TestType[] = [
+    "axe-full", "interactive", "reflow", "text-spacing", "resize-text",
+    "target-size", "non-text-contrast",
+    // v4.3 — always run (zero cost)
+    "meaningful-sequence", "semantic-structure",
+  ];
   if (cluster.capabilities.hasMedia) plan.push("multimedia", "timed-events");
   if (cluster.capabilities.hasCarousel) plan.push("timed-events");
-  if (cluster.capabilities.hasForms) plan.push("error-identification");
+  if (cluster.capabilities.hasForms) plan.push("error-identification", "status-messages");
+  // hover-focus and aria-states: always run (detect interactive widgets)
+  plan.push("hover-focus", "aria-states");
   return [...new Set(plan)];
 }
 

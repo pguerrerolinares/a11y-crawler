@@ -9,6 +9,7 @@ import { injectConsentPrehideCSS } from "../analyzer/consent-blocker";
 import { runInteractiveTests } from "../analyzer/interactive";
 import { testReflow, testTextSpacing, testResizeText, testMultimedia, testTimedEvents, testTargetSize, testErrorIdentification, testNonTextContrast } from "../analyzer/wcag-tests";
 import { AuditTracer } from "./tracer";
+import type { LLMClient } from "../llm/client";
 
 const TEMPLATE_LEVEL_RULES = new Set([
   "color-contrast", "color-contrast-enhanced", "heading-order",
@@ -25,6 +26,7 @@ export async function runProbePhase(
   templates: TemplateCluster[],
   config: PipelineConfig,
   tracer: AuditTracer,
+  llmClient: LLMClient | null = null,
 ): Promise<void> {
   const probeCtx = new ProbeContextManager(getBrowser, config.probePagesPerContext);
 
