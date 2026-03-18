@@ -142,6 +142,9 @@ export async function runProbePhase(
                   await Bun.write(join(screenshotDir, `${prefix}-normal.png`), ss.normalPng);
                   await Bun.write(join(screenshotDir, `${prefix}-cvd.png`), ss.cvdPng);
                 }
+                // Save diffPercent metadata for PDF report
+                const meta = r.screenshots.map(ss => ({ deficiency: ss.deficiency, diffPercent: ss.diffPercent }));
+                await Bun.write(join(screenshotDir, "metadata.json"), JSON.stringify(meta));
               }
             }
           }

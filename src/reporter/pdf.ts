@@ -1,6 +1,6 @@
 import type { Browser } from "playwright";
 import { writeFile, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import type { SiteReport } from "../types/report.ts";
 
 /**
@@ -18,13 +18,23 @@ export async function generatePdf(
   await mkdir(dirname(outputPath), { recursive: true });
 
   // Load CVD screenshots if directory is provided
-  let cvdScreenshots: Array<{ deficiency: string; normalB64: string; cvdB64: string }> = [];
+  let cvdScreenshots: Array<{ deficiency: string; normalB64: string; cvdB64: string; diffPercent?: number }> = [];
   if (screenshotsDir) {
+    // Read optional metadata sidecar for diffPercent values
+    const metaMap = new Map<string, number>();
+    try {
+      const metaFile = Bun.file(join(screenshotsDir, "metadata.json"));
+      if (await metaFile.exists()) {
+        const meta = await metaFile.json() as Array<{ deficiency: string; diffPercent: number }>;
+        for (const m of meta) metaMap.set(m.deficiency, m.diffPercent);
+      }
+    } catch { /* metadata unavailable — diffPercent will be omitted */ }
+
     const deficiencies = ["deuteranopia", "achromatopsia"];
     for (const def of deficiencies) {
       try {
-        const normalFile = Bun.file(`${screenshotsDir}/${def}-normal.png`);
-        const cvdFile = Bun.file(`${screenshotsDir}/${def}-cvd.png`);
+        const normalFile = Bun.file(join(screenshotsDir, `${def}-normal.png`));
+        const cvdFile = Bun.file(join(screenshotsDir, `${def}-cvd.png`));
         if (await normalFile.exists() && await cvdFile.exists()) {
           const normalBuf = await normalFile.arrayBuffer();
           const cvdBuf = await cvdFile.arrayBuffer();
@@ -32,6 +42,7 @@ export async function generatePdf(
             deficiency: def,
             normalB64: Buffer.from(normalBuf).toString("base64"),
             cvdB64: Buffer.from(cvdBuf).toString("base64"),
+            diffPercent: metaMap.get(def),
           });
         }
       } catch {
@@ -60,7 +71,7 @@ export async function generatePdf(
 function buildHtml(
   report: SiteReport,
   wcagScore: number | null,
-  cvdScreenshots: Array<{ deficiency: string; normalB64: string; cvdB64: string }> = [],
+  cvdScreenshots: Array<{ deficiency: string; normalB64: string; cvdB64: string; diffPercent?: number }> = [],
 ): string {
   const { meta, summary, sharedIssues, pages } = report;
   const scoreStr = wcagScore === null ? "N/A" : String(wcagScore);
@@ -171,7 +182,8 @@ ${cvdScreenshots.length > 0 ? `
 </p>
 ${cvdScreenshots.map(ss => `
 <div style="margin-bottom:24px">
-  <h3 style="font-size:13px;margin-bottom:8px;text-transform:capitalize">${escHtml(ss.deficiency)}</h3>
+  <h3 style="font-size:13px;margin-bottom:4px;text-transform:capitalize">${escHtml(ss.deficiency)}</h3>
+  ${ss.diffPercent !== undefined ? `<p style="font-size:11px;color:#555;margin-bottom:8px">Pixel difference: <strong>${ss.diffPercent.toFixed(1)}%</strong></p>` : ""}
   <div style="display:flex;gap:12px;align-items:flex-start">
     <div style="flex:1">
       <p style="font-size:11px;color:#555;margin-bottom:4px">Normal vision</p>
