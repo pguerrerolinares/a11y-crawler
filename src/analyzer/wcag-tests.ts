@@ -1,7 +1,6 @@
 import type { Page } from "playwright";
 import type { Issue, ImpactLevel } from "../types/issue";
 import { parseRgba, alphaBlend, relativeLuminance, contrastRatio } from "./contrast";
-import { buildCssSelector } from "./utils";
 
 function makeIssue(
   url: string,

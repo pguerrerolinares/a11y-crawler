@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Page } from "playwright";
 import type { Issue } from "../types/issue.ts";
-import { buildCssSelector } from "./utils";
 
 /**
  * Run all interactive accessibility tests on a page.
