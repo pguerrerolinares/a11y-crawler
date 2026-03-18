@@ -450,21 +450,31 @@ export async function testTargetSize(page: Page, url: string): Promise<Issue[]> 
 
       for (const el of document.querySelectorAll(selector)) {
         const rect = el.getBoundingClientRect();
-        // Skip hidden elements
         if (rect.width === 0 || rect.height === 0) continue;
-        if (rect.width < minSize || rect.height < minSize) {
-          const css =
-            el.id ? `#${el.id}` :
-            el.className && typeof el.className === "string"
-              ? `${el.tagName.toLowerCase()}.${el.className.trim().split(/\s+/).join(".")}`
-              : el.tagName.toLowerCase();
-          results.push({
-            selector: css,
-            html: el.outerHTML.slice(0, 200),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height),
-          });
+        if (rect.width >= minSize && rect.height >= minSize) continue;
+
+        // WCAG 2.5.8 exemption: inline links within text blocks
+        const tag = el.tagName.toLowerCase();
+        if (tag === "a" && el.closest("p, li, td, th, figcaption, blockquote, dd, dt")) continue;
+
+        // WCAG 2.5.8 exemption: user-agent controlled sizing (native controls)
+        if (["input", "select", "textarea"].includes(tag)) {
+          const type = (el as HTMLInputElement).type;
+          // Exempt text-like inputs (user agent controls their height)
+          if (["text", "email", "password", "search", "url", "tel", "number", "date"].includes(type)) continue;
         }
+
+        const css =
+          el.id ? `#${el.id}` :
+          el.className && typeof el.className === "string"
+            ? `${el.tagName.toLowerCase()}.${el.className.trim().split(/\s+/).slice(0, 3).join(".")}`
+            : el.tagName.toLowerCase();
+        results.push({
+          selector: css,
+          html: el.outerHTML.slice(0, 200),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        });
       }
       return results;
     },
