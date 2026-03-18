@@ -1,4 +1,6 @@
 // src/worker/probe.ts
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import type { Browser, Page } from "playwright";
 import type { Issue } from "../types/issue";
 import type { TemplateCluster, TestType, PipelineConfig } from "../types/pipeline";
@@ -127,7 +129,21 @@ export async function runProbePhase(
           // 6. CVD color analysis (screenshots — run after viewport tests restore)
           if (cluster.testPlan.includes("color-use")) {
             const r = await withTimeout(testColorUse(page, url, llmClient), 45_000);
-            if (r) allIssues.push(...r);
+            if (r) {
+              allIssues.push(...r.issues);
+              if (r.screenshots.length > 0) {
+                const screenshotDir = join(
+                  process.env.REPORTS_DIR || "./reports",
+                  auditId, "screenshots"
+                );
+                await mkdir(screenshotDir, { recursive: true });
+                for (const ss of r.screenshots) {
+                  const prefix = ss.deficiency;
+                  await Bun.write(join(screenshotDir, `${prefix}-normal.png`), ss.normalPng);
+                  await Bun.write(join(screenshotDir, `${prefix}-cvd.png`), ss.cvdPng);
+                }
+              }
+            }
           }
 
           // 7. Sensory instructions (LLM text analysis — can run anytime)

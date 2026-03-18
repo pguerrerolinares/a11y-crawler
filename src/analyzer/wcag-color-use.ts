@@ -224,6 +224,17 @@ Respond with JSON only:
 
 // ─── Main Test Function ───
 
+export interface ColorUseResult {
+  issues: Issue[];
+  screenshots: Array<{
+    rule: string;
+    normalPng: Buffer;
+    cvdPng: Buffer;
+    deficiency: string;
+    diffPercent: number;
+  }>;
+}
+
 /**
  * WCAG 1.4.1 — Use of Color: 3-tier detection.
  *
@@ -237,8 +248,9 @@ export async function testColorUse(
   page: Page,
   url: string,
   llmClient: LLMClient | null = null,
-): Promise<Issue[]> {
+): Promise<ColorUseResult> {
   const issues: Issue[] = [];
+  const screenshots: ColorUseResult["screenshots"] = [];
 
   // Tier 1: DOM heuristics (always run)
   issues.push(...await tier1DomHeuristics(page, url));
@@ -248,6 +260,14 @@ export async function testColorUse(
   try {
     const cvdResults = await tier2CvdScreenshotDiff(page);
     for (const r of cvdResults) {
+      // Collect all deficiency screenshots as evidence
+      screenshots.push({
+        rule: "color-use-cvd",
+        normalPng: r.normalPng,
+        cvdPng: r.cvdPng,
+        deficiency: r.deficiency,
+        diffPercent: r.diffPercent,
+      });
       if (!bestResult || r.diffPercent > bestResult.diffPercent) {
         bestResult = r;
       }
@@ -261,7 +281,7 @@ export async function testColorUse(
     }
   } catch {
     // CVD simulation not available — skip Tier 2 and 3
-    return issues;
+    return { issues, screenshots: [] };
   }
 
   // Tier 3: LLM vision confirmation (only if diff exceeds threshold)
@@ -280,5 +300,5 @@ export async function testColorUse(
     }
   }
 
-  return issues;
+  return { issues, screenshots };
 }
