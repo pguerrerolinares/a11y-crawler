@@ -137,9 +137,11 @@ export async function runProbePhase(
                   auditId, "screenshots",
                 );
                 await Bun.write(join(screenshotDir, ".keep"), ""); // ensures dir exists
-                for (const ss of colorResult.screenshots) {
-                  await Bun.write(join(screenshotDir, `${ss.deficiency}-normal.png`), ss.normalPng);
-                  await Bun.write(join(screenshotDir, `${ss.deficiency}-cvd.png`), ss.cvdPng);
+                // Use template ID prefix to avoid overwriting across templates
+              const templatePrefix = cluster.id.slice(0, 8);
+              for (const ss of colorResult.screenshots) {
+                  await Bun.write(join(screenshotDir, `${templatePrefix}-${ss.deficiency}-normal.png`), ss.normalPng);
+                  await Bun.write(join(screenshotDir, `${templatePrefix}-${ss.deficiency}-cvd.png`), ss.cvdPng);
                 }
               }
             }
