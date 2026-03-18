@@ -50,11 +50,20 @@ export function computePixelDiffPercent(
 // ─── Tier 1: DOM Heuristics (zero cost) ───
 
 async function tier1DomHeuristics(page: Page, url: string): Promise<Issue[]> {
-  const findings = await page.evaluate(() => {
+  const { CONSENT_BANNER_SELECTOR } = await import("./utils");
+
+  const findings = await page.evaluate((consentSelector: string) => {
     const results: Array<{ type: string; selector: string; detail: string }> = [];
+
+    function isInsideConsentOrHidden(el: Element): boolean {
+      if (el.closest(consentSelector)) return true;
+      const style = getComputedStyle(el);
+      return style.display === "none" || style.visibility === "hidden";
+    }
 
     // 1a. Links distinguished only by color (no underline, no bold, no border)
     document.querySelectorAll("p a, li a, td a, span a").forEach((link) => {
+      if (isInsideConsentOrHidden(link)) return;
       const style = getComputedStyle(link);
       const textDec = style.textDecorationLine || style.textDecoration;
       if (textDec.includes("underline")) return;
@@ -83,13 +92,11 @@ async function tier1DomHeuristics(page: Page, url: string): Promise<Issue[]> {
     document.querySelectorAll(
       "[class*='status'], [class*='badge'], [class*='indicator'], [class*='dot']",
     ).forEach((el) => {
+      if (isInsideConsentOrHidden(el)) return;
       const text = el.textContent?.trim() ?? "";
       const ariaLabel = el.getAttribute("aria-label") ?? "";
       const title = el.getAttribute("title") ?? "";
       if (text.length > 0 || ariaLabel.length > 0 || title.length > 0) return;
-
-      const style = getComputedStyle(el);
-      if (style.display === "none" || style.visibility === "hidden") return;
 
       const selector = el.id ? `#${el.id}` :
         el.className && typeof el.className === "string"
@@ -103,7 +110,7 @@ async function tier1DomHeuristics(page: Page, url: string): Promise<Issue[]> {
     });
 
     return results;
-  });
+  }, CONSENT_BANNER_SELECTOR);
 
   return findings.map((f) =>
     makeColorIssue(url, `color-use-${f.type}`, "serious", `${f.detail} (WCAG 1.4.1 Use of Color)`, f.selector, null),

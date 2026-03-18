@@ -41,11 +41,20 @@ export function isPseudoListLayout(rects: Array<{ height: number; left: number }
  * proper HTML semantic markup (pseudo-headings, pseudo-lists, missing fieldsets).
  */
 export async function testSemanticStructure(page: Page, url: string): Promise<Issue[]> {
-  const findings = await page.evaluate(() => {
+  const { CONSENT_BANNER_SELECTOR } = await import("./utils");
+
+  const findings = await page.evaluate((consentSelector: string) => {
     const results: Array<{ type: string; selector: string; detail: string }> = [];
+
+    function isInsideConsentOrHidden(el: Element): boolean {
+      if (el.closest(consentSelector)) return true;
+      const style = getComputedStyle(el);
+      return style.display === "none" || style.visibility === "hidden";
+    }
 
     // --- Pseudo-heading detection ---
     document.querySelectorAll("div, p, span").forEach((el) => {
+      if (isInsideConsentOrHidden(el)) return;
       const cs = getComputedStyle(el);
       const fontSize = parseFloat(cs.fontSize);
       const fontWeight = parseFloat(cs.fontWeight) || (cs.fontWeight === "bold" ? 700 : 400);
@@ -76,6 +85,7 @@ export async function testSemanticStructure(page: Page, url: string): Promise<Is
 
     // --- Pseudo-list detection ---
     document.querySelectorAll("div, section, main, article").forEach((container) => {
+      if (isInsideConsentOrHidden(container)) return;
       const children = Array.from(container.children)
         .filter((c) => {
           const tag = c.tagName;
@@ -116,6 +126,7 @@ export async function testSemanticStructure(page: Page, url: string): Promise<Is
 
     // --- Missing fieldset detection ---
     document.querySelectorAll("form, [role='form']").forEach((form) => {
+      if (isInsideConsentOrHidden(form)) return;
       const inputs = form.querySelectorAll("input, select, textarea");
       if (inputs.length < 4) return;
 
@@ -152,7 +163,7 @@ export async function testSemanticStructure(page: Page, url: string): Promise<Is
     });
 
     return results;
-  });
+  }, CONSENT_BANNER_SELECTOR);
 
   return findings.map((f) => {
     switch (f.type) {

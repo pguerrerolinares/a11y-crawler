@@ -12,3 +12,17 @@ export function buildCssSelector(tagName: string, id: string, className: string)
   }
   return tag;
 }
+
+/**
+ * CSS selector matching known consent/cookie banner containers.
+ * Use with el.closest() inside page.evaluate() to skip elements inside banners.
+ * Must be kept in sync with consent-blocker.ts CONSENT_PREHIDE_CSS.
+ */
+export const CONSENT_BANNER_SELECTOR = [
+  "#CybotCookiebotDialog", "#onetrust-banner-sdk", "#onetrust-consent-sdk",
+  "[id*='cookie-banner']", "[id*='cookie-consent']", "[id*='cookieConsent']",
+  "[class*='cookie-banner']", "[class*='cookie-consent']", "[class*='cookieConsent']",
+  "[id*='gdpr-banner']", "[class*='gdpr-banner']",
+  "[id*='consent-banner']", "[class*='consent-banner']",
+  "#cmpbox", "#cmpbox2", "#cmpwrapper", ".klaro",
+].join(", ");
