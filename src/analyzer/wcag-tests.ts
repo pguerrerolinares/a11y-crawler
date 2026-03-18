@@ -50,7 +50,7 @@ const CRITERION_SLUGS: Record<string, string> = {
 };
 
 function wcagCriterionToSlug(criterion: string): string {
-  return CRITERION_SLUGS[criterion] ?? criterion;
+  return CRITERION_SLUGS[criterion] ?? "";
 }
 
 /**
@@ -69,18 +69,14 @@ export async function testReflow(page: Page, url: string): Promise<Issue[]> {
     const overflowing = await page.evaluate((vpWidth: number) => {
       const exempt = new Set(["TABLE", "VIDEO", "CANVAS", "SVG", "PRE", "CODE"]);
       const tolerance = 2;
+      const MARKER = "data-wcag-overflow-flagged";
       const results: { selector: string; tagName: string; actualWidth: number }[] = [];
-      const seen = new Set<Element>();
 
       const allElements = document.querySelectorAll("body *");
       for (const el of allElements) {
         if (exempt.has(el.tagName)) continue;
-        // Skip descendants of already-flagged elements
-        let isChild = false;
-        for (const parent of seen) {
-          if (parent.contains(el)) { isChild = true; break; }
-        }
-        if (isChild) continue;
+        // O(depth) ancestor check via closest() — avoids O(n*m) Set iteration
+        if ((el as HTMLElement).closest(`[${MARKER}]`)) continue;
 
         const rect = el.getBoundingClientRect();
         if (rect.width > vpWidth + tolerance) {
@@ -90,9 +86,11 @@ export async function testReflow(page: Page, url: string): Promise<Issue[]> {
               ? `${el.tagName.toLowerCase()}.${el.className.trim().split(/\s+/).slice(0, 3).join(".")}`
               : el.tagName.toLowerCase();
           results.push({ selector, tagName: el.tagName, actualWidth: Math.round(rect.width) });
-          seen.add(el);
+          (el as HTMLElement).setAttribute(MARKER, "1");
         }
       }
+      // Clean up markers
+      document.querySelectorAll(`[${MARKER}]`).forEach((el) => el.removeAttribute(MARKER));
       return results;
     }, width);
 

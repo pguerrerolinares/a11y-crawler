@@ -344,18 +344,12 @@ async function testKeyboardOperability(page: Page, pageUrl: string): Promise<Iss
         stateBefore.ariaPressed !== stateAfter.ariaPressed ||
         stateBefore.ariaChecked !== stateAfter.ariaChecked;
 
-      // Check if any new visible element appeared (controlled element)
+      // Check if the aria-controls target is now visible
       const controlledAppeared = await handle.evaluate((el) => {
         const controlsId = el.getAttribute("aria-controls");
         if (controlsId) {
           const target = document.getElementById(controlsId);
           if (target) return getComputedStyle(target).display !== "none";
-        }
-        // Check next sibling as fallback
-        const next = el.nextElementSibling;
-        if (next && getComputedStyle(next).display !== "none") {
-          const prevDisplay = next.getAttribute("data-prev-display");
-          return prevDisplay !== null; // Changed visibility
         }
         return false;
       }).catch(() => false);
