@@ -9,6 +9,7 @@ import { handleIssues } from "./routes/issues.ts";
 import { handleLogs } from "./routes/logs.ts";
 import { handleExport } from "./routes/export.ts";
 import { handleSSE } from "./routes/sse.ts";
+import { handleScreenshots } from "./routes/screenshots.ts";
 
 const env = validateEnv();
 
@@ -87,6 +88,10 @@ async function handleApiRoute(req: Request, url: URL): Promise<Response> {
   // Export routes — after pages/issues/shared, before /api/audits catch-all
   if (url.pathname.match(/^\/api\/audits\/[^/]+\/export\/(csv|pdf)$/)) {
     return handleExport(req, url);
+  }
+  // Screenshot routes
+  if (url.pathname.match(/^\/api\/audits\/[^/]+\/screenshots/)) {
+    return handleScreenshots(req, url);
   }
   if (url.pathname.startsWith("/api/pages/")) {
     if (url.pathname.match(/\/issues$/)) return handleIssues(req, url);
