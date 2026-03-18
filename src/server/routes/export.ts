@@ -38,7 +38,7 @@ async function exportCsv(auditId: string): Promise<Response> {
 
   const CSV_HEADERS = [
     "rule", "impact", "category", "page_url", "selector",
-    "description", "help", "wcag_tags", "suggested_fix",
+    "description", "help", "wcag_tags", "wcag_criterion", "llm_confidence", "suggested_fix",
   ];
 
   const stream = new ReadableStream({
@@ -56,7 +56,7 @@ async function exportCsv(auditId: string): Promise<Response> {
         while (true) {
           const issues = await db`
             SELECT i.rule, i.impact, i.category, i.selector, i.description,
-                   i.help, i.wcag_tags, i.suggested_fix, i.page_id
+                   i.help, i.wcag_tags, i.llm_confidence, i.suggested_fix, i.page_id
             FROM issues i
             WHERE i.audit_id = ${auditId}
             ORDER BY i.impact, i.rule
@@ -82,6 +82,8 @@ async function exportCsv(auditId: string): Promise<Response> {
               Array.isArray(issue.wcag_tags)
                 ? issue.wcag_tags.join(";")
                 : (typeof issue.wcag_tags === "string" ? issue.wcag_tags : ""),
+              extractWcagCriterion(issue.wcag_tags),
+              issue.llm_confidence ?? "",
               issue.suggested_fix ?? "",
             ].map(csvEscape).join(",");
 
@@ -132,6 +134,16 @@ async function exportPdf(auditId: string): Promise<Response> {
       "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });
+}
+
+function extractWcagCriterion(tags: unknown): string {
+  if (!Array.isArray(tags)) return "";
+  const wcagTag = (tags as string[]).find(t => /^wcag\d{3,4}$/.test(t));
+  if (!wcagTag) return "";
+  const digits = wcagTag.replace("wcag", "");
+  if (digits.length === 3) return `${digits[0]}.${digits[1]}.${digits[2]}`;
+  if (digits.length === 4) return `${digits[0]}.${digits[1]}.${digits.slice(2)}`;
+  return "";
 }
 
 /** Escape a CSV field value: prefix dangerous leading characters, wrap in quotes if needed. */

@@ -88,7 +88,11 @@ async function getAudit(id: string): Promise<Response> {
   const db = getDb();
   const [audit] = await db`SELECT * FROM audits WHERE id = ${id}`;
   if (!audit) return Response.json({ error: "Not Found" }, { status: 404 });
-  return Response.json(mapAuditRow(audit));
+
+  const rules = await db`SELECT DISTINCT rule FROM issues WHERE audit_id = ${id}`;
+  const detectedRules = rules.map((r: Record<string, unknown>) => r.rule as string);
+
+  return Response.json({ ...mapAuditRow(audit), detectedRules });
 }
 
 async function deleteAudit(id: string): Promise<Response> {
