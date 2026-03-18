@@ -115,9 +115,15 @@ export async function testTextSpacing(page: Page, url: string): Promise<Issue[]>
 
     for (const el of targets) {
       const computed = getComputedStyle(el);
-      if (computed.overflow === "hidden") {
+      const isClipped =
+        computed.overflow === "hidden" || computed.overflow === "clip" ||
+        computed.overflowX === "hidden" || computed.overflowX === "clip" ||
+        computed.overflowY === "hidden" || computed.overflowY === "clip";
+
+      if (isClipped) {
         const htmlEl = el as HTMLElement;
-        if (htmlEl.scrollHeight > htmlEl.clientHeight + tolerance) {
+        if (htmlEl.scrollHeight > htmlEl.clientHeight + tolerance ||
+            htmlEl.scrollWidth > htmlEl.clientWidth + tolerance) {
           const selector =
             el.id ? `#${el.id}` :
             el.className && typeof el.className === "string"
