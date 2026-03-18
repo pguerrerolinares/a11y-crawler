@@ -151,7 +151,7 @@ describe("buildTestPlan", () => {
     };
   }
 
-  test("always includes the 6 mandatory tests", () => {
+  test("always includes the mandatory tests (axe-full, interactive, reflow, text-spacing, resize-text, target-size, non-text-contrast, meaningful-sequence, semantic-structure, hover-focus, aria-states)", () => {
     const plan = buildTestPlan(makeCluster());
     expect(plan).toContain("axe-full");
     expect(plan).toContain("interactive");
@@ -160,28 +160,32 @@ describe("buildTestPlan", () => {
     expect(plan).toContain("resize-text");
     expect(plan).toContain("target-size");
     expect(plan).toContain("non-text-contrast");
-    expect(plan).toHaveLength(7);
+    expect(plan).toContain("meaningful-sequence");
+    expect(plan).toContain("semantic-structure");
+    expect(plan).toContain("hover-focus");
+    expect(plan).toContain("aria-states");
+    expect(plan).toHaveLength(11);
   });
 
   test("adds multimedia and timed-events when hasMedia", () => {
     const plan = buildTestPlan(makeCluster({ hasMedia: true }));
     expect(plan).toContain("multimedia");
     expect(plan).toContain("timed-events");
-    expect(plan).toHaveLength(9);
+    expect(plan).toHaveLength(13);
   });
 
   test("adds timed-events when hasCarousel", () => {
     const plan = buildTestPlan(makeCluster({ hasCarousel: true }));
     expect(plan).toContain("timed-events");
     expect(plan).not.toContain("multimedia");
-    expect(plan).toHaveLength(8);
+    expect(plan).toHaveLength(12);
   });
 
   test("no duplicate timed-events when both hasMedia and hasCarousel", () => {
     const plan = buildTestPlan(makeCluster({ hasMedia: true, hasCarousel: true }));
     const timedCount = plan.filter((t) => t === "timed-events").length;
     expect(timedCount).toBe(1);
-    expect(plan).toHaveLength(9);
+    expect(plan).toHaveLength(13);
   });
 
   test("includes error-identification when hasForms is true", () => {

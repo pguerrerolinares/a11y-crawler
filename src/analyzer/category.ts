@@ -42,6 +42,19 @@ const CATEGORY_MAP: Record<string, ViolationCategory> = {
   "audio-caption": "media",
   "object-alt": "media",
   "svg-img-alt": "media",
+
+  // v4.3 — new WCAG tests
+  "meaningful-sequence": "structural",
+  "meaningful-sequence-reorder": "structural",
+  "semantic-pseudo-heading": "semantic",
+  "semantic-pseudo-list": "semantic",
+  "semantic-pseudo-table": "semantic",
+  "semantic-missing-fieldset": "semantic",
+  "aria-state-missing": "interactive",
+  "hover-focus-not-persistent": "interactive",
+  "hover-focus-not-hoverable": "interactive",
+  "hover-focus-not-dismissible": "interactive",
+  "status-message-no-live-region": "interactive",
 };
 
 export function getViolationCategory(ruleId: string): ViolationCategory {

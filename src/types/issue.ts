@@ -1,6 +1,6 @@
 export type ImpactLevel = "critical" | "serious" | "moderate" | "minor";
 
-export type CheckSource = "axe" | "llm" | "interactive" | "scan-light" | "wcag-custom";
+export type CheckSource = "axe" | "llm" | "llm-vision" | "interactive" | "scan-light" | "wcag-custom";
 
 export type ViolationCategory =
   | "structural"

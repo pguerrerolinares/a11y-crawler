@@ -39,6 +39,15 @@ async function runWorkerMigrations(): Promise<void> {
     });
     console.log("Migration v4-pipeline-columns applied");
   }
+
+  if (!appliedSet.has("v4.3-llm-confidence")) {
+    console.log("Running migration: v4.3-llm-confidence");
+    await db.begin(async (tx) => {
+      await tx.unsafe(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS llm_confidence TEXT`);
+      await tx`INSERT INTO migrations (id) VALUES ('v4.3-llm-confidence')`;
+    });
+    console.log("Migration v4.3-llm-confidence applied");
+  }
 }
 
 export function getWorkerDb() {

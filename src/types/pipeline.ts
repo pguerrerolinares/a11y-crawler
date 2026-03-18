@@ -30,7 +30,13 @@ export type TestType =
   | "timed-events"
   | "target-size"
   | "error-identification"
-  | "non-text-contrast";
+  | "non-text-contrast"
+  // v4.3 — zero-cost WCAG tests
+  | "hover-focus"
+  | "meaningful-sequence"
+  | "aria-states"
+  | "status-messages"
+  | "semantic-structure";
 
 export interface TemplateCluster {
   id: string;
