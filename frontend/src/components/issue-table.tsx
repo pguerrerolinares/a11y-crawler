@@ -178,16 +178,21 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                               </div>
                             )}
                             {(issue.rule === "color-use-cvd" || issue.rule === "color-use-llm") && (
-                              <div className="mt-2 flex gap-2 items-center">
+                              <div className="mt-2 space-y-1">
                                 <span className="text-sm font-medium">Evidence:</span>
-                                <a href={`/api/audits/${issue.auditId}/screenshots/deuteranopia-normal.png`}
-                                   target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
-                                  Normal
-                                </a>
-                                <a href={`/api/audits/${issue.auditId}/screenshots/deuteranopia-cvd.png`}
-                                   target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
-                                  CVD Simulation
-                                </a>
+                                {(["deuteranopia", "achromatopsia"] as const).map(def => (
+                                  <div key={def} className="flex gap-2 items-center ml-2">
+                                    <span className="text-xs text-muted-foreground capitalize">{def}:</span>
+                                    <a href={`/api/audits/${issue.auditId}/screenshots/${def}-normal.png`}
+                                       target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline dark:text-blue-400">
+                                      Normal
+                                    </a>
+                                    <a href={`/api/audits/${issue.auditId}/screenshots/${def}-cvd.png`}
+                                       target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline dark:text-blue-400">
+                                      CVD
+                                    </a>
+                                  </div>
+                                ))}
                               </div>
                             )}
                           </div>

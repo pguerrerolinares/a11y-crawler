@@ -2,6 +2,7 @@
 import { join, resolve } from "node:path";
 
 const reportsDir = process.env.REPORTS_DIR || "./reports";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function handleScreenshots(req: Request, url: URL): Promise<Response> {
   if (req.method !== "GET") return Response.json({ error: "Method Not Allowed" }, { status: 405 });
@@ -10,6 +11,11 @@ export async function handleScreenshots(req: Request, url: URL): Promise<Respons
   const fileMatch = url.pathname.match(/^\/api\/audits\/([^/]+)\/screenshots\/([^/]+)$/);
   if (fileMatch) {
     const [, auditId, filename] = fileMatch;
+
+    // Validate auditId (prevent path traversal via auditId)
+    if (!UUID_RE.test(auditId)) {
+      return new Response("Invalid audit ID", { status: 400 });
+    }
 
     // Validate filename (prevent path traversal)
     if (!/^[\w-]+\.png$/.test(filename)) {
@@ -36,6 +42,12 @@ export async function handleScreenshots(req: Request, url: URL): Promise<Respons
   const listMatch = url.pathname.match(/^\/api\/audits\/([^/]+)\/screenshots$/);
   if (listMatch) {
     const [, auditId] = listMatch;
+
+    // Validate auditId (prevent path traversal)
+    if (!UUID_RE.test(auditId)) {
+      return new Response("Invalid audit ID", { status: 400 });
+    }
+
     const dir = join(reportsDir, auditId, "screenshots");
 
     try {

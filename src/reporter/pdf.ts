@@ -18,7 +18,7 @@ export async function generatePdf(
   await mkdir(dirname(outputPath), { recursive: true });
 
   // Load CVD screenshots if directory is provided
-  let cvdScreenshots: Array<{ deficiency: string; normalB64: string; cvdB64: string; diffPercent?: number }> = [];
+  const cvdScreenshots: Array<{ deficiency: string; normalB64: string; cvdB64: string; diffPercent?: number }> = [];
   if (screenshotsDir) {
     // Read optional metadata sidecar for diffPercent values
     const metaMap = new Map<string, number>();
