@@ -188,7 +188,8 @@ export async function testHoverFocus(page: Page, url: string): Promise<Issue[]> 
       }
 
     } catch {
-      // Interaction sequence failed — skip this trigger
+      // Interaction sequence failed — disconnect observer and skip this trigger
+      await page.evaluate(() => (window as any).__hoverObs?.disconnect()).catch(() => {});
     }
   }
 

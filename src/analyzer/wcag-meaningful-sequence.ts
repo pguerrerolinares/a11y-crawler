@@ -96,7 +96,8 @@ export async function testMeaningfulSequence(page: Page, url: string): Promise<I
         visualRanks[item.domIdx] = visualIdx;
       });
 
-      // Compute Kendall's tau
+      // Compute Kendall's tau (intentionally duplicated from computeKendallTau — functions
+      // passed to page.evaluate() run in the browser context and cannot reference Node.js closures)
       const n = visualRanks.length;
       let concordant = 0;
       let discordant = 0;
