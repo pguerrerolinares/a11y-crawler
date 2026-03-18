@@ -61,7 +61,7 @@ export async function testAriaStates(page: Page, url: string): Promise<Issue[]> 
       });
     });
 
-    return results.slice(0, 10); // limit to 10 to avoid excessive interaction
+    return results.slice(0, 6); // limit to avoid excessive interaction
   });
 
   for (const trigger of triggers) {

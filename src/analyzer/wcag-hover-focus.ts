@@ -57,7 +57,7 @@ export async function testHoverFocus(page: Page, url: string): Promise<Issue[]> 
       });
     });
 
-    return results.slice(0, 8); // limit interactions
+    return results.slice(0, 5); // limit interactions to keep probe fast
   });
 
   for (const trigger of triggers) {
@@ -120,9 +120,9 @@ export async function testHoverFocus(page: Page, url: string): Promise<Issue[]> 
       const popupSelector = popup.selector;
 
       // --- TEST 1: PERSISTENT ---
-      // Re-hover trigger, wait 3 seconds, check if popup still visible
+      // Re-hover trigger, wait 1.5 seconds, check if popup still visible
       await handle.hover();
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(1500);
       const stillVisible = await page.$(popupSelector)
         .then((el) => el?.isVisible() ?? false)
         .catch(() => false);
