@@ -126,8 +126,23 @@ export async function runProbePhase(
 
           // 6. CVD color analysis (screenshots — run after viewport tests restore)
           if (cluster.testPlan.includes("color-use")) {
-            const r = await withTimeout(testColorUse(page, url, llmClient), 45_000);
-            if (r) allIssues.push(...r);
+            const colorResult = await withTimeout(testColorUse(page, url, llmClient), 45_000);
+            if (colorResult) {
+              allIssues.push(...colorResult.issues);
+              // Save CVD screenshots as evidence
+              if (colorResult.screenshots.length > 0) {
+                const { join } = await import("node:path");
+                const screenshotDir = join(
+                  process.env.REPORTS_DIR || "./reports",
+                  auditId, "screenshots",
+                );
+                await Bun.write(join(screenshotDir, ".keep"), ""); // ensures dir exists
+                for (const ss of colorResult.screenshots) {
+                  await Bun.write(join(screenshotDir, `${ss.deficiency}-normal.png`), ss.normalPng);
+                  await Bun.write(join(screenshotDir, `${ss.deficiency}-cvd.png`), ss.cvdPng);
+                }
+              }
+            }
           }
 
           // 7. Sensory instructions (LLM text analysis — can run anytime)

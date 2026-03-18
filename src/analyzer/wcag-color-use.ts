@@ -233,12 +233,23 @@ Respond with JSON only:
  *
  * @param llmClient - Optional. If null, only Tier 1 + Tier 2 run.
  */
+export interface ColorUseResult {
+  issues: Issue[];
+  screenshots: Array<{
+    deficiency: string;
+    normalPng: Buffer;
+    cvdPng: Buffer;
+    diffPercent: number;
+  }>;
+}
+
 export async function testColorUse(
   page: Page,
   url: string,
   llmClient: LLMClient | null = null,
-): Promise<Issue[]> {
+): Promise<ColorUseResult> {
   const issues: Issue[] = [];
+  const screenshots: ColorUseResult["screenshots"] = [];
 
   // Tier 1: DOM heuristics (always run)
   issues.push(...await tier1DomHeuristics(page, url));
@@ -253,6 +264,16 @@ export async function testColorUse(
       }
     }
 
+    // Collect screenshots for evidence
+    for (const r of cvdResults) {
+      screenshots.push({
+        deficiency: r.deficiency,
+        normalPng: r.normalPng,
+        cvdPng: r.cvdPng,
+        diffPercent: r.diffPercent,
+      });
+    }
+
     // Report high CVD diff as informational even without LLM
     if (bestResult && bestResult.diffPercent > 5) {
       issues.push(makeColorIssue(url, "color-use-cvd", "moderate",
@@ -261,7 +282,7 @@ export async function testColorUse(
     }
   } catch {
     // CVD simulation not available — skip Tier 2 and 3
-    return issues;
+    return { issues, screenshots };
   }
 
   // Tier 3: LLM vision confirmation (only if diff exceeds threshold)
@@ -280,5 +301,5 @@ export async function testColorUse(
     }
   }
 
-  return issues;
+  return { issues, screenshots };
 }
