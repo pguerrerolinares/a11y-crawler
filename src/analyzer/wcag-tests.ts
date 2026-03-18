@@ -43,44 +43,51 @@ export async function testReflow(page: Page, url: string): Promise<Issue[]> {
   const height = originalViewport?.height ?? 768;
 
   await page.setViewportSize({ width, height });
-  // Allow reflow to settle
   await page.waitForTimeout(300);
 
-  const overflowing = await page.evaluate((vpWidth: number) => {
-    const exempt = new Set(["TABLE", "VIDEO", "CANVAS", "SVG", "PRE", "CODE"]);
-    const tolerance = 2;
-    const results: { selector: string; tagName: string; actualWidth: number }[] = [];
+  try {
+    const overflowing = await page.evaluate((vpWidth: number) => {
+      const exempt = new Set(["TABLE", "VIDEO", "CANVAS", "SVG", "PRE", "CODE"]);
+      const tolerance = 2;
+      const results: { selector: string; tagName: string; actualWidth: number }[] = [];
+      const seen = new Set<Element>();
 
-    const allElements = document.querySelectorAll("body *");
-    for (const el of allElements) {
-      if (exempt.has(el.tagName)) continue;
-      const rect = el.getBoundingClientRect();
-      if (rect.width > vpWidth + tolerance) {
-        const selector =
-          el.id ? `#${el.id}` :
-          el.className && typeof el.className === "string"
-            ? `${el.tagName.toLowerCase()}.${el.className.trim().split(/\s+/).join(".")}`
-            : el.tagName.toLowerCase();
-        results.push({ selector, tagName: el.tagName, actualWidth: Math.round(rect.width) });
+      const allElements = document.querySelectorAll("body *");
+      for (const el of allElements) {
+        if (exempt.has(el.tagName)) continue;
+        // Skip descendants of already-flagged elements
+        let isChild = false;
+        for (const parent of seen) {
+          if (parent.contains(el)) { isChild = true; break; }
+        }
+        if (isChild) continue;
+
+        const rect = el.getBoundingClientRect();
+        if (rect.width > vpWidth + tolerance) {
+          const selector =
+            el.id ? `#${el.id}` :
+            el.className && typeof el.className === "string"
+              ? `${el.tagName.toLowerCase()}.${el.className.trim().split(/\s+/).slice(0, 3).join(".")}`
+              : el.tagName.toLowerCase();
+          results.push({ selector, tagName: el.tagName, actualWidth: Math.round(rect.width) });
+          seen.add(el);
+        }
       }
+      return results;
+    }, width);
+
+    return overflowing.map((el) =>
+      makeIssue(
+        url, "reflow", "serious",
+        `Element "${el.selector}" is ${el.actualWidth}px wide, exceeding 320px viewport (WCAG 1.4.10 Reflow)`,
+        el.selector,
+      ),
+    );
+  } finally {
+    if (originalViewport) {
+      await page.setViewportSize(originalViewport);
     }
-    return results;
-  }, width);
-
-  // Restore original viewport
-  if (originalViewport) {
-    await page.setViewportSize(originalViewport);
   }
-
-  return overflowing.map((el) =>
-    makeIssue(
-      url,
-      "reflow",
-      "serious",
-      `Element "${el.selector}" is ${el.actualWidth}px wide, exceeding 320px viewport (WCAG 1.4.10 Reflow)`,
-      el.selector,
-    ),
-  );
 }
 
 /**
@@ -191,34 +198,36 @@ export async function testResizeText(page: Page, url: string): Promise<Issue[]> 
     }
   }
 
-  // Simulate 200% zoom by halving viewport width
+  // Simulate 200% zoom using CSS zoom property (not viewport halving)
   const originalViewport = page.viewportSize();
-  const currentWidth = originalViewport?.width ?? 1280;
-  const height = originalViewport?.height ?? 768;
-  const halfWidth = Math.round(currentWidth / 2);
+  try {
+    const zoomOverflow = await page.evaluate(() => {
+      const html = document.documentElement;
+      const originalZoom = html.style.zoom;
+      html.style.zoom = "2";
 
-  await page.setViewportSize({ width: halfWidth, height });
-  await page.waitForTimeout(300);
+      // Wait for layout
+      void html.offsetHeight;
 
-  const hasOverflow = await page.evaluate(() => {
-    return document.documentElement.scrollWidth > document.documentElement.clientWidth;
-  });
+      const hasOverflow = html.scrollWidth > html.clientWidth;
+      html.style.zoom = originalZoom;
+      return hasOverflow;
+    });
 
-  if (hasOverflow) {
-    issues.push(
-      makeIssue(
-        url,
-        "resize-text",
-        "serious",
-        `Page has horizontal overflow when viewport is halved to simulate 200% zoom (WCAG 1.4.4 Resize Text)`,
-        "html",
-      ),
-    );
-  }
-
-  // Restore original viewport
-  if (originalViewport) {
-    await page.setViewportSize(originalViewport);
+    if (zoomOverflow) {
+      issues.push(
+        makeIssue(
+          url, "resize-text", "serious",
+          `Page has horizontal overflow at 200% zoom (WCAG 1.4.4 Resize Text)`,
+          "html",
+        ),
+      );
+    }
+  } finally {
+    // Ensure viewport is restored if any prior step changed it
+    if (originalViewport) {
+      await page.setViewportSize(originalViewport);
+    }
   }
 
   return issues;
