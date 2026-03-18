@@ -10,6 +10,11 @@ import { runInteractiveTests } from "../analyzer/interactive";
 import { testReflow, testTextSpacing, testResizeText, testMultimedia, testTimedEvents, testTargetSize, testErrorIdentification, testNonTextContrast } from "../analyzer/wcag-tests";
 import { AuditTracer } from "./tracer";
 import type { LLMClient } from "../llm/client";
+import { testMeaningfulSequence } from "../analyzer/wcag-meaningful-sequence";
+import { testSemanticStructure } from "../analyzer/wcag-semantic-structure";
+import { testAriaStates } from "../analyzer/wcag-aria-states";
+import { testStatusMessages } from "../analyzer/wcag-status-messages";
+import { testHoverFocus } from "../analyzer/wcag-hover-focus";
 
 const TEMPLATE_LEVEL_RULES = new Set([
   "color-contrast", "color-contrast-enhanced", "heading-order",
@@ -18,6 +23,12 @@ const TEMPLATE_LEVEL_RULES = new Set([
   "reflow", "text-spacing", "resize-text", "non-text-contrast",
   "focus-order", "focus-visible", "keyboard-trap", "skip-nav",
   "target-size",
+  // v4.3
+  "meaningful-sequence", "meaningful-sequence-reorder",
+  "semantic-pseudo-heading", "semantic-pseudo-list", "semantic-missing-fieldset",
+  "aria-state-missing",
+  "hover-focus-not-persistent", "hover-focus-not-hoverable", "hover-focus-not-dismissible",
+  "status-message-no-live-region",
 ]);
 
 export async function runProbePhase(
@@ -66,6 +77,8 @@ export async function runProbePhase(
           if (cluster.testPlan.includes("multimedia")) evaluateTests.push(testMultimedia(page, url));
           if (cluster.testPlan.includes("timed-events")) evaluateTests.push(testTimedEvents(page, url));
           if (cluster.testPlan.includes("non-text-contrast")) evaluateTests.push(testNonTextContrast(page, url));
+          if (cluster.testPlan.includes("meaningful-sequence")) evaluateTests.push(testMeaningfulSequence(page, url));
+          if (cluster.testPlan.includes("semantic-structure")) evaluateTests.push(testSemanticStructure(page, url));
           const evaluateResults = await Promise.all(evaluateTests);
           allIssues.push(...evaluateResults.flat());
 
@@ -73,6 +86,17 @@ export async function runProbePhase(
           if (cluster.testPlan.includes("interactive")) {
             const interactiveIssues = await runInteractiveTests(page, url);
             allIssues.push(...interactiveIssues);
+          }
+
+          // 3.5. New interactive tests (interaction + observation)
+          if (cluster.testPlan.includes("aria-states")) {
+            allIssues.push(...await testAriaStates(page, url));
+          }
+          if (cluster.testPlan.includes("hover-focus")) {
+            allIssues.push(...await testHoverFocus(page, url));
+          }
+          if (cluster.testPlan.includes("status-messages")) {
+            allIssues.push(...await testStatusMessages(page, url));
           }
 
           // 4. Viewport tests (sequential — each modifies viewport)
