@@ -4,6 +4,9 @@ import type { Issue } from "../types/issue";
 import type { LLMClient } from "../llm/client";
 import { buildMultimodalMessage, extractJsonFromLlm } from "../llm/client";
 
+// Subset of CDP VisionDeficiency enum used here
+type CvdDeficiency = "deuteranopia" | "achromatopsia";
+
 function makeColorIssue(
   url: string, rule: string, impact: "critical" | "serious" | "moderate" | "minor",
   description: string, selector: string, confidence: "high" | "medium" | "low" | null,
@@ -32,8 +35,7 @@ export function computePixelDiffPercent(
   width: number,
   height: number,
 ): number {
-  // Lazy import to avoid breaking tests that don't have pixelmatch
-  // pixelmatch is ESM — require() returns the module, default export is the function
+  // pixelmatch is ESM — require() returns the module object, default is the function
   const pixelmatch = require("pixelmatch").default ?? require("pixelmatch");
   const totalPixels = width * height;
   const diff = new Uint8Array(totalPixels * 4);
@@ -111,39 +113,41 @@ async function tier1DomHeuristics(page: Page, url: string): Promise<Issue[]> {
 // ─── Tier 2: CVD Screenshot Diff ───
 
 interface CvdDiffResult {
-  deficiency: string;
+  deficiency: CvdDeficiency;
   diffPercent: number;
+  normalPng: Buffer;
+  cvdPng: Buffer;
 }
 
 async function tier2CvdScreenshotDiff(page: Page): Promise<CvdDiffResult[]> {
-  const sharp = require("sharp");
+  const { default: sharp } = await import("sharp");
   const results: CvdDiffResult[] = [];
 
-  // Take normal screenshot
+  // Take normal screenshot once — reused across all deficiency checks
   const normalShot = await page.screenshot({ type: "png", fullPage: false });
   const { data: normalRaw, info } = await sharp(normalShot)
     .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width, height } = info;
 
-  // Test with deuteranopia (most common CVD, ~6% of males)
-  const deficiencies = ["deuteranopia", "achromatopsia"] as const;
+  const deficiencies: CvdDeficiency[] = ["deuteranopia", "achromatopsia"];
 
   for (const deficiency of deficiencies) {
+    const client = await page.context().newCDPSession(page);
     try {
-      const client = await page.context().newCDPSession(page);
       await client.send("Emulation.setEmulatedVisionDeficiency", { type: deficiency });
       const cvdShot = await page.screenshot({ type: "png", fullPage: false });
       await client.send("Emulation.setEmulatedVisionDeficiency", { type: "none" });
-      await client.detach();
 
       const { data: cvdRaw } = await sharp(cvdShot)
         .ensureAlpha().resize(width, height).raw().toBuffer({ resolveWithObject: true });
 
       const diffPercent = computePixelDiffPercent(normalRaw, cvdRaw, width, height);
-      results.push({ deficiency, diffPercent });
+      results.push({ deficiency, diffPercent, normalPng: normalShot, cvdPng: cvdShot });
     } catch (err) {
       // CDP not available (e.g. Firefox) — skip
       console.warn(`CVD simulation (${deficiency}) failed:`, err instanceof Error ? err.message : err);
+    } finally {
+      await client.detach();
     }
   }
 
@@ -159,25 +163,28 @@ interface LlmColorAnalysis {
   elements: string[];
 }
 
+function isLlmColorAnalysis(v: unknown): v is LlmColorAnalysis {
+  if (!v || typeof v !== "object") return false;
+  const obj = v as Record<string, unknown>;
+  return (
+    typeof obj.hasViolation === "boolean" &&
+    (obj.confidence === "high" || obj.confidence === "medium" || obj.confidence === "low") &&
+    typeof obj.explanation === "string" &&
+    Array.isArray(obj.elements)
+  );
+}
+
 async function tier3LlmVisionConfirmation(
-  page: Page,
+  normalPng: Buffer,
+  cvdPng: Buffer,
   llmClient: LLMClient,
-  deficiency: string,
+  deficiency: CvdDeficiency,
 ): Promise<LlmColorAnalysis | null> {
-  const sharp = require("sharp");
-
-  // Take both screenshots
-  const normalShot = await page.screenshot({ type: "png", fullPage: false });
-
-  const client = await page.context().newCDPSession(page);
-  await client.send("Emulation.setEmulatedVisionDeficiency", { type: deficiency });
-  const cvdShot = await page.screenshot({ type: "png", fullPage: false });
-  await client.send("Emulation.setEmulatedVisionDeficiency", { type: "none" });
-  await client.detach();
+  const { default: sharp } = await import("sharp");
 
   // Resize to reduce token cost (max 800px wide)
-  const resized1 = await sharp(normalShot).resize(800, null, { withoutEnlargement: true }).png().toBuffer();
-  const resized2 = await sharp(cvdShot).resize(800, null, { withoutEnlargement: true }).png().toBuffer();
+  const resized1 = await sharp(normalPng).resize(800, null, { withoutEnlargement: true }).png().toBuffer();
+  const resized2 = await sharp(cvdPng).resize(800, null, { withoutEnlargement: true }).png().toBuffer();
 
   const b64Normal = resized1.toString("base64");
   const b64Cvd = resized2.toString("base64");
@@ -202,8 +209,8 @@ Respond with JSON only:
   const response = await llmClient.chatVision([message]);
   if (!response) return null;
 
-  const parsed = extractJsonFromLlm(response.content) as LlmColorAnalysis | null;
-  return parsed;
+  const parsed = extractJsonFromLlm(response.content);
+  return isLlmColorAnalysis(parsed) ? parsed : null;
 }
 
 // ─── Main Test Function ───
@@ -228,21 +235,19 @@ export async function testColorUse(
   issues.push(...await tier1DomHeuristics(page, url));
 
   // Tier 2: CVD screenshot diff
-  let maxDiffPercent = 0;
-  let worstDeficiency = "deuteranopia";
+  let bestResult: CvdDiffResult | null = null;
   try {
     const cvdResults = await tier2CvdScreenshotDiff(page);
     for (const r of cvdResults) {
-      if (r.diffPercent > maxDiffPercent) {
-        maxDiffPercent = r.diffPercent;
-        worstDeficiency = r.deficiency;
+      if (!bestResult || r.diffPercent > bestResult.diffPercent) {
+        bestResult = r;
       }
     }
 
     // Report high CVD diff as informational even without LLM
-    if (maxDiffPercent > 5) {
+    if (bestResult && bestResult.diffPercent > 5) {
       issues.push(makeColorIssue(url, "color-use-cvd", "moderate",
-        `Page has ${maxDiffPercent.toFixed(1)}% pixel difference under ${worstDeficiency} simulation — significant color-dependent information may exist (WCAG 1.4.1)`,
+        `Page has ${bestResult.diffPercent.toFixed(1)}% pixel difference under ${bestResult.deficiency} simulation — significant color-dependent information may exist (WCAG 1.4.1)`,
         "html", null));
     }
   } catch {
@@ -251,9 +256,11 @@ export async function testColorUse(
   }
 
   // Tier 3: LLM vision confirmation (only if diff exceeds threshold)
-  if (maxDiffPercent > 0.5 && llmClient?.hasVision) {
+  if (bestResult && bestResult.diffPercent > 0.5 && llmClient?.hasVision) {
     try {
-      const analysis = await tier3LlmVisionConfirmation(page, llmClient, worstDeficiency);
+      const analysis = await tier3LlmVisionConfirmation(
+        bestResult.normalPng, bestResult.cvdPng, llmClient, bestResult.deficiency,
+      );
       if (analysis?.hasViolation) {
         issues.push(makeColorIssue(url, "color-use-llm", analysis.confidence === "high" ? "serious" : "moderate",
           `LLM analysis (${analysis.confidence} confidence): ${analysis.explanation}. Affected: ${analysis.elements.join(", ")} (WCAG 1.4.1)`,
