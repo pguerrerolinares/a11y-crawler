@@ -102,6 +102,16 @@ async function listSharedIssues(auditId: string): Promise<Response> {
   });
 }
 
+function extractWcagCriterion(tags: unknown): string | null {
+  if (!Array.isArray(tags)) return null;
+  const wcagTag = (tags as string[]).find(t => /^wcag\d{3,4}$/.test(t));
+  if (!wcagTag) return null;
+  const digits = wcagTag.replace("wcag", "");
+  if (digits.length === 3) return `${digits[0]}.${digits[1]}.${digits[2]}`;
+  if (digits.length === 4) return `${digits[0]}.${digits[1]}.${digits.slice(2)}`;
+  return null;
+}
+
 function mapIssueRow(row: Record<string, unknown>): IssueResponse {
   return {
     id: row.id,
@@ -120,6 +130,8 @@ function mapIssueRow(row: Record<string, unknown>): IssueResponse {
     category: row.category,
     suggestedFix: row.suggested_fix,
     fixConfidence: row.fix_confidence,
+    llmConfidence: row.llm_confidence ?? null,
+    wcagCriterion: extractWcagCriterion(row.wcag_tags),
     createdAt: row.created_at,
   };
 }
