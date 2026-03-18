@@ -8,6 +8,7 @@ function makeIssue(
   impact: ImpactLevel,
   description: string,
   selector: string,
+  wcagCriterion?: string,
 ): Issue {
   return {
     id: crypto.randomUUID(),
@@ -16,8 +17,10 @@ function makeIssue(
     impact,
     description,
     help: description,
-    helpUrl: "",
-    wcagTags: [],
+    helpUrl: wcagCriterion
+      ? `https://www.w3.org/WAI/WCAG22/Understanding/${wcagCriterionToSlug(wcagCriterion)}`
+      : "",
+    wcagTags: wcagCriterion ? [`wcag${wcagCriterion.replace(".", "")}`] : [],
     selector,
     html: "",
     surroundingHtml: "",
@@ -28,9 +31,26 @@ function makeIssue(
     suggestedFix: null,
     fixConfidence: null,
     llmConfidence: null,
-    wcagCriterion: null,
+    wcagCriterion: wcagCriterion ?? null,
     violationCategory: "visual",
   };
+}
+
+const CRITERION_SLUGS: Record<string, string> = {
+  "1.4.10": "reflow",
+  "1.4.12": "text-spacing",
+  "1.4.4": "resize-text",
+  "1.2.1": "audio-only-and-video-only-prerecorded",
+  "2.2.1": "timing-adjustable",
+  "2.2.2": "pause-stop-hide",
+  "2.5.8": "target-size-minimum",
+  "3.3.1": "error-identification",
+  "3.3.3": "error-suggestion",
+  "1.4.11": "non-text-contrast",
+};
+
+function wcagCriterionToSlug(criterion: string): string {
+  return CRITERION_SLUGS[criterion] ?? criterion;
 }
 
 /**
@@ -80,7 +100,7 @@ export async function testReflow(page: Page, url: string): Promise<Issue[]> {
       makeIssue(
         url, "reflow", "serious",
         `Element "${el.selector}" is ${el.actualWidth}px wide, exceeding 320px viewport (WCAG 1.4.10 Reflow)`,
-        el.selector,
+        el.selector, "1.4.10",
       ),
     );
   } finally {
@@ -145,7 +165,7 @@ export async function testTextSpacing(page: Page, url: string): Promise<Issue[]>
       "text-spacing",
       "serious",
       `Element "${el.selector}" clips content when text spacing is increased (WCAG 1.4.12 Text Spacing)`,
-      el.selector,
+      el.selector, "1.4.12",
     ),
   );
 }
@@ -188,7 +208,7 @@ export async function testResizeText(page: Page, url: string): Promise<Issue[]> 
           "resize-text",
           "critical",
           `Meta viewport disables user scaling: "${meta.content}" (WCAG 1.4.4 Resize Text)`,
-          'meta[name="viewport"]',
+          'meta[name="viewport"]', "1.4.4",
         ),
       );
     } else if (meta.type === "max-scale-low") {
@@ -198,7 +218,7 @@ export async function testResizeText(page: Page, url: string): Promise<Issue[]> 
           "resize-text",
           "serious",
           `Meta viewport maximum-scale is less than 2: "${meta.content}" (WCAG 1.4.4 Resize Text)`,
-          'meta[name="viewport"]',
+          'meta[name="viewport"]', "1.4.4",
         ),
       );
     }
@@ -225,7 +245,7 @@ export async function testResizeText(page: Page, url: string): Promise<Issue[]> 
         makeIssue(
           url, "resize-text", "serious",
           `Page has horizontal overflow at 200% zoom (WCAG 1.4.4 Resize Text)`,
-          "html",
+          "html", "1.4.4",
         ),
       );
     }
@@ -290,7 +310,7 @@ export async function testMultimedia(page: Page, url: string): Promise<Issue[]> 
         "multimedia",
         "serious",
         `Video element lacks captions or subtitles track (WCAG 1.2.1–1.2.5)`,
-        f.selector,
+        f.selector, "1.2.1",
       );
     } else if (f.type === "audio-no-captions") {
       return makeIssue(
@@ -298,7 +318,7 @@ export async function testMultimedia(page: Page, url: string): Promise<Issue[]> 
         "multimedia",
         "serious",
         `Audio element lacks captions or subtitles track (WCAG 1.2.1–1.2.5)`,
-        f.selector,
+        f.selector, "1.2.1",
       );
     } else {
       return makeIssue(
@@ -306,7 +326,7 @@ export async function testMultimedia(page: Page, url: string): Promise<Issue[]> 
         "multimedia",
         "moderate",
         `Embedded video (YouTube/Vimeo) detected — verify captions are enabled (WCAG 1.2.1–1.2.5)`,
-        f.selector,
+        f.selector, "1.2.1",
       );
     }
   });
@@ -371,7 +391,7 @@ export async function testTimedEvents(page: Page, url: string): Promise<Issue[]>
           "timed-events",
           "critical",
           `Page uses meta refresh which can disorient users (WCAG 2.2.1)`,
-          f.selector,
+          f.selector, "2.2.1",
         );
       case "marquee":
         return makeIssue(
@@ -379,7 +399,7 @@ export async function testTimedEvents(page: Page, url: string): Promise<Issue[]>
           "timed-events",
           "serious",
           `Marquee element detected — moving content without pause control (WCAG 2.2.2)`,
-          f.selector,
+          f.selector, "2.2.2",
         );
       case "autoplay-video":
         return makeIssue(
@@ -387,7 +407,7 @@ export async function testTimedEvents(page: Page, url: string): Promise<Issue[]>
           "timed-events",
           "serious",
           `Video with autoplay detected — may lack pause mechanism (WCAG 2.2.2)`,
-          f.selector,
+          f.selector, "2.2.2",
         );
       case "autoplay-audio":
         return makeIssue(
@@ -395,7 +415,7 @@ export async function testTimedEvents(page: Page, url: string): Promise<Issue[]>
           "timed-events",
           "serious",
           `Audio with autoplay detected — may lack pause mechanism (WCAG 2.2.2)`,
-          f.selector,
+          f.selector, "2.2.2",
         );
       case "carousel":
         return makeIssue(
@@ -403,10 +423,10 @@ export async function testTimedEvents(page: Page, url: string): Promise<Issue[]>
           "timed-events",
           "serious",
           `Carousel/slider detected — verify it has pause/stop controls (WCAG 2.2.2)`,
-          f.selector,
+          f.selector, "2.2.2",
         );
       default:
-        return makeIssue(url, "timed-events", "serious", `Timed event detected`, f.selector);
+        return makeIssue(url, "timed-events", "serious", `Timed event detected`, f.selector, "2.2.2");
     }
   });
 }
@@ -457,7 +477,7 @@ export async function testTargetSize(page: Page, url: string): Promise<Issue[]> 
       "target-size",
       "serious",
       `Interactive element "${el.selector}" is ${el.width}×${el.height}px, below minimum 24×24px (WCAG 2.5.8 Target Size)`,
-      el.selector,
+      el.selector, "2.5.8",
     ),
   );
 }
@@ -503,7 +523,7 @@ export async function testErrorIdentification(page: Page, url: string): Promise<
           "error-identification",
           "critical",
           `Form (action="${action || "self"}") navigates on empty submission without client-side validation (WCAG 3.3.1 Error Identification)`,
-          `form[action="${action}"]`,
+          `form[action="${action}"]`, "3.3.1",
         ),
       );
       // If goBack failed, we're on the wrong page — stop processing forms
@@ -523,7 +543,7 @@ export async function testErrorIdentification(page: Page, url: string): Promise<
           "error-identification",
           "serious",
           `Form (action="${action || "self"}") does not set aria-invalid="true" on fields after empty submission (WCAG 3.3.1 Error Identification)`,
-          `form[action="${action}"]`,
+          `form[action="${action}"]`, "3.3.1",
         ),
       );
     }
@@ -535,7 +555,7 @@ export async function testErrorIdentification(page: Page, url: string): Promise<
           "error-identification",
           "serious",
           `Form (action="${action || "self"}") does not announce errors via role="alert" after empty submission (WCAG 3.3.1 Error Identification)`,
-          `form[action="${action}"]`,
+          `form[action="${action}"]`, "3.3.1",
         ),
       );
     }
@@ -547,7 +567,7 @@ export async function testErrorIdentification(page: Page, url: string): Promise<
           "error-identification",
           "moderate",
           `Form (action="${action || "self"}") sets aria-invalid but lacks aria-describedby to describe the error (WCAG 3.3.3 Error Suggestion)`,
-          `form[action="${action}"]`,
+          `form[action="${action}"]`, "3.3.3",
         ),
       );
     }
@@ -688,7 +708,7 @@ export async function testNonTextContrast(page: Page, url: string): Promise<Issu
           "non-text-contrast",
           "serious",
           `Border of <${el.selector}> (${worstSide} side) has contrast ratio ${worstRatio.toFixed(1)}:1 against adjacent background (needs 3:1) — WCAG 1.4.11 Non-text Contrast`,
-          el.selector,
+          el.selector, "1.4.11",
         ),
       );
     }
