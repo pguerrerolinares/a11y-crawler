@@ -119,6 +119,6 @@ function mapAuditRow(row: Record<string, unknown>): AuditResponse {
     crawlErrors: row.crawl_errors,
     templateClusters: row.template_clusters,
     regression: row.regression,
-    detectedRules: [],
+    detectedRules: [], // Not populated in list endpoint — only getAudit runs the DISTINCT rule query
   } as AuditResponse;
 }
