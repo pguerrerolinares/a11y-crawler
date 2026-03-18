@@ -182,10 +182,9 @@ async function testFocusVisibility(page: Page, pageUrl: string): Promise<Issue[]
         before.boxShadow === after.boxShadow &&
         before.border === after.border;
 
-      const outlineRemoved =
-        after.outline.includes("none") || after.outline.includes("0px");
-
-      if (noChange || outlineRemoved) {
+      // Flag only when NO visual property changed on focus
+      // (outline being "none" is fine if box-shadow or border provides indication)
+      if (noChange) {
         const selector = await el.evaluate((e) => {
           if (e.id) return `#${e.id}`;
           const tag = e.tagName.toLowerCase();
