@@ -88,17 +88,21 @@ export async function runProbePhase(
             allIssues.push(...interactiveIssues);
           }
 
-          // 3.5. New interactive tests (interaction + observation)
-          // Note: aria-states runs first as it clicks/resets widgets; hover-focus and
-          // status-messages follow since they depend on page state being close to initial.
+          // 3.5. New interactive tests (with 30s timeout each to prevent hangs)
+          const withTimeout = <T>(fn: Promise<T>, ms = 30_000): Promise<T | null> =>
+            Promise.race([fn, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+
           if (cluster.testPlan.includes("aria-states")) {
-            allIssues.push(...await testAriaStates(page, url));
+            const r = await withTimeout(testAriaStates(page, url));
+            if (r) allIssues.push(...r);
           }
           if (cluster.testPlan.includes("hover-focus")) {
-            allIssues.push(...await testHoverFocus(page, url));
+            const r = await withTimeout(testHoverFocus(page, url));
+            if (r) allIssues.push(...r);
           }
           if (cluster.testPlan.includes("status-messages")) {
-            allIssues.push(...await testStatusMessages(page, url));
+            const r = await withTimeout(testStatusMessages(page, url));
+            if (r) allIssues.push(...r);
           }
 
           // 4. Viewport tests (sequential — each modifies viewport)
