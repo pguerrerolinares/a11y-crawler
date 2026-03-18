@@ -29,6 +29,20 @@ const sourceLabels: Record<string, string> = {
   interactive: "Interactive",
 };
 
+function ConfidenceBadge({ confidence }: { confidence: string | null }) {
+  if (!confidence) return null;
+  const colors: Record<string, string> = {
+    high: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
+    medium: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
+    low: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300",
+  };
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ml-1 ${colors[confidence] ?? ""}`}>
+      {confidence}
+    </span>
+  );
+}
+
 interface IssueTableProps {
   auditId: string;
   pageId?: string;
@@ -126,6 +140,7 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                         <Badge className={sourceColors[issue.checkSource] ?? ""} variant="secondary">
                           {sourceLabels[issue.checkSource] ?? issue.checkSource}
                         </Badge>
+                        <ConfidenceBadge confidence={issue.llmConfidence} />
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-xs">{issue.category ?? "—"}</TableCell>
                       <TableCell className="hidden lg:table-cell text-xs max-w-xs truncate">
@@ -148,6 +163,32 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                               <a href={issue.helpUrl} target="_blank" rel="noopener" className="text-blue-500 underline">
                                 Learn more
                               </a>
+                            )}
+                            {issue.wcagCriterion && (
+                              <div className="text-sm">
+                                <span className="font-medium">WCAG: </span>
+                                <a
+                                  href={`https://www.w3.org/WAI/WCAG22/Understanding/${issue.wcagCriterion}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:underline dark:text-blue-400"
+                                >
+                                  {issue.wcagCriterion}
+                                </a>
+                              </div>
+                            )}
+                            {(issue.rule === "color-use-cvd" || issue.rule === "color-use-llm") && (
+                              <div className="mt-2 flex gap-2 items-center">
+                                <span className="text-sm font-medium">Evidence:</span>
+                                <a href={`/api/audits/${issue.auditId}/screenshots/deuteranopia-normal.png`}
+                                   target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
+                                  Normal
+                                </a>
+                                <a href={`/api/audits/${issue.auditId}/screenshots/deuteranopia-cvd.png`}
+                                   target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
+                                  CVD Simulation
+                                </a>
+                              </div>
                             )}
                           </div>
                         </TableCell>

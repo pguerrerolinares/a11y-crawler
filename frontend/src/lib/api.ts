@@ -73,6 +73,8 @@ export interface IssueResponse {
   category: string | null;
   suggestedFix: string | null;
   checkSource: string;
+  llmConfidence: string | null;
+  wcagCriterion: string | null;
   createdAt: string;
 }
 
