@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { QueryError } from "@/components/error-boundary";
 import { Trash2, ArrowLeft, Globe, Clock, AlertTriangle, Download, ChevronDown } from "lucide-react";
 import { RegressionTab } from "@/components/regression-tab";
+import { CoverageSummary } from "@/components/coverage-summary";
 
 export default function AuditDetail() {
   const { id } = useParams<{ id: string }>();
@@ -155,6 +156,7 @@ export default function AuditDetail() {
               <TabsTrigger value="pages">Pages</TabsTrigger>
               <TabsTrigger value="shared">Shared</TabsTrigger>
               <TabsTrigger value="summary">Summary</TabsTrigger>
+              <TabsTrigger value="coverage">Coverage</TabsTrigger>
               {audit.regression && <TabsTrigger value="regression">Regresión</TabsTrigger>}
             </TabsList>
 
@@ -226,6 +228,10 @@ export default function AuditDetail() {
                   </pre>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="coverage" className="mt-4">
+              <CoverageSummary detectedRules={audit.detectedRules ?? []} />
             </TabsContent>
 
             {audit.regression && (
