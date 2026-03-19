@@ -60,7 +60,7 @@ export function makeWcagIssue(
     helpUrl: wcagCriterion
       ? `https://www.w3.org/WAI/WCAG22/Understanding/${wcagCriterionToSlug(wcagCriterion)}`
       : "",
-    wcagTags: wcagCriterion ? [`wcag${wcagCriterion.replace(".", "")}`] : [],
+    wcagTags: wcagCriterion ? [`wcag${wcagCriterion.replaceAll(".", "")}`] : [],
     selector,
     html: "",
     surroundingHtml: "",
