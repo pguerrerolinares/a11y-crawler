@@ -4,7 +4,7 @@ import type { Issue } from "../types/issue";
 import type { TemplateCluster, TestType, PipelineConfig } from "../types/pipeline";
 import { AxeBuilder } from "@axe-core/playwright";
 import { ProbeContextManager } from "./probe-context";
-import { insertPageV4, insertIssuesV4 } from "./db";
+import { insertPageV4, insertIssuesV4, insertTier3Job } from "./db";
 import { injectConsentPrehideCSS } from "../analyzer/consent-blocker";
 import { runInteractiveTests } from "../analyzer/interactive";
 import { testReflow, testTextSpacing, testResizeText, testMultimedia, testTimedEvents, testTargetSize, testErrorIdentification, testNonTextContrast } from "../analyzer/wcag-tests";
@@ -12,13 +12,14 @@ import { AuditTracer } from "./tracer";
 import type { LLMClient } from "../llm/client";
 import { testMeaningfulSequence } from "../analyzer/wcag-meaningful-sequence";
 import { testSemanticStructure } from "../analyzer/wcag-semantic-structure";
-import { testAriaStates } from "../analyzer/wcag-aria-states";
 import { testStatusMessages } from "../analyzer/wcag-status-messages";
-import { testHoverFocus } from "../analyzer/wcag-hover-focus";
 import { testColorUse } from "../analyzer/wcag-color-use";
 import { testSensoryInstructions } from "../analyzer/wcag-sensory-instructions";
 import { testLegalA11y } from "../analyzer/wcag-legal-checks";
-import { testStateChangeContrast } from "../analyzer/wcag-state-change-contrast";
+import { collectManifest, groupByFingerprint } from "./manifest";
+import { runTier1 } from "./tier1";
+import { runTier2 } from "./tier2";
+import { TierTimer } from "./tier-timer";
 
 const TEMPLATE_LEVEL_RULES = new Set([
   "color-contrast", "color-contrast-enhanced", "heading-order",
@@ -40,6 +41,8 @@ const TEMPLATE_LEVEL_RULES = new Set([
   // v4.5
   "skip-nav-missing", "accessibility-declaration-missing",
   "state-change-low-contrast",
+  // v5 tier system
+  "state-change-contrast", "hover-focus", "aria-states", "keyboard-operability",
 ]);
 
 export async function runProbePhase(
@@ -61,12 +64,23 @@ export async function runProbePhase(
 
         const context = await probeCtx.get();
         const page = await context.newPage();
+        const timer = new TierTimer(auditId, cluster.id, url);
 
         try {
           await page.goto(url, { waitUntil: "load", timeout: 60_000 });
           await injectConsentPrehideCSS(page);
 
           const allIssues: Issue[] = [];
+
+          // --- Tier 0: Element Interaction Manifest ---
+          timer.startTier("tier0");
+          const manifest = await collectManifest(page);
+          const styleGroups = groupByFingerprint(manifest);
+          timer.endTier("tier0", {
+            elementsDiscovered: manifest.length,
+            styleGroups: styleGroups.length,
+            representativeElements: styleGroups.length,
+          });
 
           // 1. axe-core full (needs clean DOM — run first)
           if (cluster.testPlan.includes("axe-full")) {
@@ -82,7 +96,7 @@ export async function runProbePhase(
             parentSpan.setMeta({ errorIdViolations: errorIdIssues.length });
           }
 
-          // 2. page.evaluate()-only tests (parallel)
+          // 2. page.evaluate()-only tests (parallel) — unchanged
           const evaluateTests: Promise<Issue[]>[] = [];
           if (cluster.testPlan.includes("target-size")) evaluateTests.push(testTargetSize(page, url));
           if (cluster.testPlan.includes("multimedia")) evaluateTests.push(testMultimedia(page, url));
@@ -94,28 +108,36 @@ export async function runProbePhase(
           const evaluateResults = await Promise.all(evaluateTests);
           allIssues.push(...evaluateResults.flat());
 
-          // 3. Interactive tests
+          // 3. Interactive tests (legacy — kept for non-tiered rules)
           if (cluster.testPlan.includes("interactive")) {
             const interactiveIssues = await runInteractiveTests(page, url);
             allIssues.push(...interactiveIssues);
           }
 
-          // 3.5. New interactive tests (with 30s timeout each to prevent hangs)
+          // --- Tier 1: DOM/CSSOM Analysis (replaces separate state-change, hover-focus, aria-states) ---
+          const { issues: tier1Issues, promotedElements } = await runTier1(page, styleGroups, url, timer);
+          allIssues.push(...tier1Issues);
+
+          // --- Tier 2: Unified Interaction Pass (only elements Tier 1 couldn't resolve) ---
+          const { issues: tier2Issues, promotedToTier3 } = await runTier2(page, promotedElements, url, timer);
+          allIssues.push(...tier2Issues);
+
+          // --- Tier 3: Queue async LLM vision jobs ---
+          if (promotedToTier3.length > 0 && llmClient) {
+            const tier3Elements = promotedToTier3.map(el => ({
+              selector: el.selector,
+              context: `${el.tag} element: ${el.accessibleName || el.selector}`,
+              promptType: "color-use-link", // default; specialized by test context
+            }));
+            await insertTier3Job(auditId, cluster.id, tier3Elements, 2).catch(err => {
+              console.warn(`[probe] Failed to insert tier3 job: ${err}`);
+            });
+          }
+
+          // 3.5. Status messages (form autofill — not replaced by tier system)
           const withTimeout = <T>(fn: Promise<T>, ms = 30_000): Promise<T | null> =>
             Promise.race([fn, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
 
-          if (cluster.testPlan.includes("aria-states")) {
-            const r = await withTimeout(testAriaStates(page, url));
-            if (r) allIssues.push(...r);
-          }
-          if (cluster.testPlan.includes("hover-focus")) {
-            const r = await withTimeout(testHoverFocus(page, url));
-            if (r) allIssues.push(...r);
-          }
-          if (cluster.testPlan.includes("state-change-contrast")) {
-            const r = await withTimeout(testStateChangeContrast(page, url));
-            if (r) allIssues.push(...r);
-          }
           if (cluster.testPlan.includes("status-messages")) {
             const r = await withTimeout(testStatusMessages(page, url));
             if (r) allIssues.push(...r);
@@ -139,17 +161,15 @@ export async function runProbePhase(
             const colorResult = await withTimeout(testColorUse(page, url, llmClient), 45_000);
             if (colorResult) {
               allIssues.push(...colorResult.issues);
-              // Save CVD screenshots as evidence
               if (colorResult.screenshots.length > 0) {
                 const { join } = await import("node:path");
                 const screenshotDir = join(
                   process.env.REPORTS_DIR || "./reports",
                   auditId, "screenshots",
                 );
-                await Bun.write(join(screenshotDir, ".keep"), ""); // ensures dir exists
-                // Use template ID prefix to avoid overwriting across templates
-              const templatePrefix = cluster.id.slice(0, 8);
-              for (const ss of colorResult.screenshots) {
+                await Bun.write(join(screenshotDir, ".keep"), "");
+                const templatePrefix = cluster.id.slice(0, 8);
+                for (const ss of colorResult.screenshots) {
                   await Bun.write(join(screenshotDir, `${templatePrefix}-${ss.deficiency}-normal.png`), ss.normalPng);
                   await Bun.write(join(screenshotDir, `${templatePrefix}-${ss.deficiency}-cvd.png`), ss.cvdPng);
                 }
@@ -225,6 +245,11 @@ export async function runProbePhase(
             totalIssues: allIssues.length,
             templateIssues: templateIssues.length,
             amplifiedToPages: cluster.urls.length - 1,
+            tier0Elements: manifest.length,
+            tier1Issues: tier1Issues.length,
+            tier2Issues: tier2Issues.length,
+            tier3Queued: promotedToTier3.length,
+            tierTiming: timer.getTiming(),
           });
         } finally {
           try { await page.close(); } catch { /* already closed */ }
