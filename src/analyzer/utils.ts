@@ -18,6 +18,64 @@ export function buildCssSelector(tagName: string, id: string, className: string)
  * Use with el.closest() inside page.evaluate() to skip elements inside banners.
  * Must be kept in sync with consent-blocker.ts CONSENT_PREHIDE_CSS.
  */
+import type { Issue, ImpactLevel, ViolationCategory } from "../types/issue";
+
+export const WCAG_CRITERION_SLUGS: Record<string, string> = {
+  "1.4.10": "reflow",
+  "1.4.12": "text-spacing",
+  "1.4.4": "resize-text",
+  "1.2.1": "audio-only-and-video-only-prerecorded",
+  "2.2.1": "timing-adjustable",
+  "2.2.2": "pause-stop-hide",
+  "2.4.1": "bypass-blocks",
+  "2.5.8": "target-size-minimum",
+  "3.3.1": "error-identification",
+  "3.3.3": "error-suggestion",
+  "1.4.11": "non-text-contrast",
+};
+
+export function wcagCriterionToSlug(criterion: string): string {
+  return WCAG_CRITERION_SLUGS[criterion] ?? "";
+}
+
+/**
+ * Shared factory for wcag-custom issues. Used by wcag-tests.ts and wcag-legal-checks.ts.
+ */
+export function makeWcagIssue(
+  url: string,
+  rule: string,
+  impact: ImpactLevel,
+  description: string,
+  selector: string,
+  wcagCriterion?: string,
+  violationCategory: ViolationCategory = "structural",
+): Issue {
+  return {
+    id: crypto.randomUUID(),
+    url,
+    rule,
+    impact,
+    description,
+    help: description,
+    helpUrl: wcagCriterion
+      ? `https://www.w3.org/WAI/WCAG22/Understanding/${wcagCriterionToSlug(wcagCriterion)}`
+      : "",
+    wcagTags: wcagCriterion ? [`wcag${wcagCriterion.replace(".", "")}`] : [],
+    selector,
+    html: "",
+    surroundingHtml: "",
+    xpath: "",
+    viewportWidth: 0,
+    pageTitle: "",
+    checkSource: "wcag-custom",
+    suggestedFix: null,
+    fixConfidence: null,
+    llmConfidence: null,
+    wcagCriterion: wcagCriterion ?? null,
+    violationCategory,
+  };
+}
+
 export const CONSENT_BANNER_SELECTOR = [
   "#CybotCookiebotDialog", "#onetrust-banner-sdk", "#onetrust-consent-sdk",
   "[id*='cookie-banner']", "[id*='cookie-consent']", "[id*='cookieConsent']",

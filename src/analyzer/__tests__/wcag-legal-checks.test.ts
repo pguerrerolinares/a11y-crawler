@@ -4,6 +4,8 @@ import { test, expect, describe, mock } from "bun:test";
 // We'll test the page.evaluate logic directly by simulating the returned data.
 // The implementation calls page.evaluate() twice: first for skip-nav, then for declaration.
 // We discriminate by call order (1st = skip, 2nd = declaration).
+// NOTE: If the order of page.evaluate() calls in wcag-legal-checks.ts changes, update the
+// mock order here accordingly — the tests will fail with misleading errors otherwise.
 
 function makeEvaluateMock(skipResult: object, declResult: object) {
   let callCount = 0;
