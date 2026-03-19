@@ -2,7 +2,7 @@ import type { Page } from "playwright";
 import type { Issue } from "../types/issue";
 import type { ElementManifest, InteractionResult, PopupInfo } from "../types/manifest";
 import type { TierTimer } from "./tier-timer";
-import { adaptiveWait } from "./adaptive-wait";
+import { adaptiveWait, disableAnimations } from "./adaptive-wait";
 import { parseRgba, alphaBlend, relativeLuminance, contrastRatio } from "../analyzer/contrast";
 
 export function isNativeInteractive(tag: string): boolean {
@@ -232,6 +232,10 @@ export async function runTier2(
   timer.startTier("tier2");
   const allIssues: Issue[] = [];
   const promotedToTier3: ElementManifest[] = [];
+
+  // Disable CSS animations/transitions so hover/focus style changes are instantaneous.
+  // We only need final computed styles, not animation timing.
+  await disableAnimations(page);
 
   for (const element of elements) {
     const result: InteractionResult = {};
