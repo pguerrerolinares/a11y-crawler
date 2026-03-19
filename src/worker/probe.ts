@@ -17,6 +17,7 @@ import { testStatusMessages } from "../analyzer/wcag-status-messages";
 import { testHoverFocus } from "../analyzer/wcag-hover-focus";
 import { testColorUse } from "../analyzer/wcag-color-use";
 import { testSensoryInstructions } from "../analyzer/wcag-sensory-instructions";
+import { testLegalA11y } from "../analyzer/wcag-legal-checks";
 
 const TEMPLATE_LEVEL_RULES = new Set([
   "color-contrast", "color-contrast-enhanced", "heading-order",
@@ -35,6 +36,8 @@ const TEMPLATE_LEVEL_RULES = new Set([
   "color-use-link-color-only", "color-use-status-color-only",
   "color-use-cvd", "color-use-llm",
   "sensory-instruction",
+  // v4.5
+  "skip-nav-missing", "accessibility-declaration-missing",
 ]);
 
 export async function runProbePhase(
@@ -85,6 +88,7 @@ export async function runProbePhase(
           if (cluster.testPlan.includes("non-text-contrast")) evaluateTests.push(testNonTextContrast(page, url));
           if (cluster.testPlan.includes("meaningful-sequence")) evaluateTests.push(testMeaningfulSequence(page, url));
           if (cluster.testPlan.includes("semantic-structure")) evaluateTests.push(testSemanticStructure(page, url));
+          if (cluster.testPlan.includes("legal-a11y")) evaluateTests.push(testLegalA11y(page, url));
           const evaluateResults = await Promise.all(evaluateTests);
           allIssues.push(...evaluateResults.flat());
 

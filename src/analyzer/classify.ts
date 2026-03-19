@@ -41,6 +41,8 @@ export function buildTestPlan(cluster: TemplateCluster): TestType[] {
     "target-size", "non-text-contrast",
     // v4.3 — always run (zero cost)
     "meaningful-sequence", "semantic-structure",
+    // v4.5 — legal/structural checks (zero cost)
+    "legal-a11y",
   ];
   if (cluster.capabilities.hasMedia) plan.push("multimedia", "timed-events");
   if (cluster.capabilities.hasCarousel) plan.push("timed-events");
