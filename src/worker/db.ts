@@ -259,14 +259,23 @@ export async function insertIssues(
 export async function persistSpans(spans: SpanRecord[]): Promise<void> {
   if (spans.length === 0) return;
   for (const s of spans) {
-    await db`
-      INSERT INTO audit_spans
-        (audit_id, trace_id, span_id, parent_span_id, name,
-         started_at, ended_at, status, error_message, metadata)
-      VALUES
-        (${s.auditId}, ${s.traceId}, ${s.spanId}, ${s.parentSpanId}, ${s.name},
-         ${s.startedAt}, ${s.endedAt}, ${s.status}, ${s.errorMessage}, ${json(s.metadata)})
-    `;
+    try {
+      await db`
+        INSERT INTO audit_spans
+          (audit_id, trace_id, span_id, parent_span_id, name,
+           started_at, ended_at, status, error_message, metadata)
+        VALUES
+          (${s.auditId}, ${s.traceId}, ${s.spanId}, ${s.parentSpanId}, ${s.name},
+           ${s.startedAt}, ${s.endedAt}, ${s.status}, ${s.errorMessage}, ${json(s.metadata)})
+      `;
+    } catch (err: unknown) {
+      if (err instanceof Error && "code" in err && (err as { code: string }).code === "23503") {
+        // FK violation — audit was deleted while pipeline was running; skip remaining spans
+        console.warn(`persistSpans: audit ${s.auditId} no longer exists, skipping spans`);
+        return;
+      }
+      throw err;
+    }
   }
 }
 

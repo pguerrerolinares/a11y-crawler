@@ -57,9 +57,13 @@ export function getTtlForPath(path: string): number | null {
   // Audit list — short TTL (new audits can appear)
   if (path === "/api/audits" || path === "/api/audits/") return LIST_TTL;
 
-  // Audit detail, issues, pages, shared, screenshots
+  // SSE events — never cache
+  if (path.match(/^\/api\/audits\/[^/]+\/events$/)) return null;
+
+  // Audit detail, issues, pages, shared, screenshots — only cache completed audits
+  // (caller must check audit status before caching; this just sets TTL)
   if (path.match(/^\/api\/audits\/[^/]+/)) return DATA_TTL;
 
-  // Don't cache other endpoints (logs, SSE, exports)
+  // Don't cache other endpoints (logs, exports)
   return null;
 }
