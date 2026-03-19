@@ -10,6 +10,7 @@ import { handleLogs } from "./routes/logs.ts";
 import { handleExport } from "./routes/export.ts";
 import { handleSSE } from "./routes/sse.ts";
 import { handleScreenshots } from "./routes/screenshots.ts";
+import { handlePerformance } from "./routes/performance.ts";
 import { getCached, setCached, getTtlForPath } from "./middleware/cache.ts";
 
 const env = validateEnv();
@@ -128,6 +129,9 @@ async function handleApiRoute(req: Request, url: URL): Promise<Response> {
   if (url.pathname.startsWith("/api/pages/")) {
     if (url.pathname.match(/\/issues$/)) return handleIssues(req, url);
     return handlePages(req, url);
+  }
+  if (url.pathname.match(/^\/api\/audits\/[^/]+\/performance$/)) {
+    return handlePerformance(req, url);
   }
   if (url.pathname.startsWith("/api/audits")) {
     return handleAudits(req, url);
