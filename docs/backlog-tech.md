@@ -142,16 +142,32 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 - **API disponible:** `GET /api/audits/:id/performance` provee todos los datos de tier necesarios.
 - **SSE:** Reutilizar eventos SSE para actualizaciones en tiempo real.
 
-### HIGH-5: Tier 1 CSSOM no resuelve ningún elemento (skippedByFingerprint=0)
-- **Observado:** En audit v5 de example-client.com: Tier 1 promovió TODOS los 351 elementos a Tier 2, resolvió 0, saltó 0.
-- **Causa probable:** Todo el CSS es cross-origin (CDN), el análisis CSSOM hover devuelve null para todo.
-- **Impacto:** Tier 1 añade ~1s de overhead sin beneficio en este tipo de sitio.
-- **Fix options:** (a) detectar cross-origin temprano y saltar análisis CSSOM; (b) añadir más heurísticas Tier 1 que no dependan de CSSOM (ej. atributos `data-*`, clases con patrones hover conocidos).
+### ~~HIGH-5: Tier 1 CSSOM no resuelve ningún elemento~~ ✅ CERRADO (v6)
+- **Fix:** Short-circuit en `tier1.ts` detecta cross-origin CSS y promueve todos los elementos directamente a Tier 2. Ahorra ~1s/audit en sitios con CDN CSS.
 
-### MEDIUM-14: Tests interactivos podrían fusionar pasadas por elemento
-- **Archivos:** `src/analyzer/wcag-state-change-contrast.ts`, `src/analyzer/wcag-hover-focus.ts`
-- **Issue:** `state-change-contrast` y `hover-focus` ambos hacen hover → read styles → reset → focus → read styles. Se ejecutan secuencialmente haciendo la misma interacción 2 veces por elemento.
-- **Fix:** Fusionar en una sola pasada: hover → read (ambos tests) → focus → read (ambos tests). Requiere refactor del interfaz pero ahorraría ~50% del tiempo de ambos tests.
+### ~~MEDIUM-14: Tests interactivos podrían fusionar pasadas por elemento~~ ✅ CERRADO (v6)
+- **Fix:** Probe reestructurado en 4 fases. Tier 2 hace una sola pasada unificada hover→focus→click→keyboard. Legacy `testKeyboardOperability` eliminado (absorbido por Tier 2 con focusability pre-check).
+
+### HIGH-6: P4 Capture (color-use CVD) consume 49% del tiempo de auditoría
+- **Observado:** v6 audit (229s, 33 pages): Phase 4 = 103.8s (4.15s/template × 25 templates)
+- **Causa:** `tier2CvdScreenshotDiff()` toma 3 screenshots (1 normal + 2 CVD), procesa cada una con sharp + pixelmatch, crea/destruye CDP session por deficiency.
+- **Archivo:** `src/analyzer/wcag-color-use.ts:130-164`
+- **Fix options:**
+  - (a) Solo deuteranopia (skip achromatopsia) → -40-50% de P4
+  - (b) Skip CVD si Tier 1 DOM heuristics ya encontró issues
+  - (c) Reutilizar CDP session entre deficiencies → -2.5s total
+  - (d) Cache por style fingerprint (templates visualmente iguales no repiten CVD)
+  - (e) Reducir resolución de screenshots
+- **Análisis detallado:** `memory/project_v6_results.md`
+
+### HIGH-7: Navigation consume 19% del tiempo de auditoría
+- **Observado:** v6: Nav total = 40.8s (1.6s avg, hasta 6.2s en páginas pesadas)
+- **Causa:** `page.goto(url, { waitUntil: "load" })` espera a todos los recursos
+- **Archivo:** `src/worker/probe.ts:82`
+- **Fix options:**
+  - (a) `waitUntil: "domcontentloaded"` → más rápido pero puede perder lazy-loaded content
+  - (b) Pipeline de 2 páginas (diferido de v6 por complejidad de ProbeContextManager)
+  - (c) Precargar URLs durante la fase de scan
 
 ### MEDIUM-15: Screenshots LLM vision enviadas sin crop — coste y tokens innecesarios
 - **Archivo:** `src/analyzer/wcag-color-use.ts:130-200`
