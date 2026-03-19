@@ -23,15 +23,11 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 - **Issue:** `require()` en módulo ESM/TS. Funciona en Bun pero es hazard de mantenimiento.
 - **Fix:** Usar `await import("pixelmatch")` (requiere hacer `computePixelDiffPercent` async).
 
-### MEDIUM-6: Pseudo-heading detection genera falsos positivos en fuentes base 18px+
-- **Archivo:** `src/analyzer/wcag-semantic-structure.ts:65`
-- **Issue:** `fontSize >= 18` flags cualquier `<div>/<p>/<span>` con texto >= 18px. Muchos sitios modernos usan 18-20px como font base.
-- **Fix:** Comparar contra el font-size del parent: `fontSize >= parentFontSize * 1.3 && fontSize >= 16`.
+### ~~MEDIUM-6: Pseudo-heading detection genera falsos positivos en fuentes base 18px+~~ ✅ CERRADO (v7)
+- **Fix:** Compara contra `parentFontSize * 1.3` (y >= 16px). Sitios con base 18-20px ya no generan FP.
 
-### MEDIUM-7: Pseudo-list detection matchea card grids
-- **Archivo:** `src/analyzer/wcag-semantic-structure.ts:87-125`
-- **Issue:** Detecta como "pseudo-list" cualquier container con 3+ hijos uniformes. Matchea card grids, product listings — ruido.
-- **Fix:** Subir threshold mínimo a 5+ items, o añadir heurísticas de contenido (links/images repetidos).
+### ~~MEDIUM-7: Pseudo-list detection matchea card grids~~ ✅ CERRADO (v7)
+- **Fix:** Threshold subido de 3+ a 5+ items. Card grids de 3-4 elementos ya no matchean.
 
 ---
 
@@ -84,15 +80,12 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 
 ## MEDIUM — Test Coverage Gaps (vs Auditoria manual de referencia manual audit 2026-01-30)
 
-### MEDIUM-11: `status-messages` no detecta RM-11 (WCAG 4.1.3) en /contacto/
-- **Referencia Auditoria manual de referencia:** RM-11 — formulario de contacto muestra mensajes confirmación/error sin `role="status"` o `aria-live`
-- **Issue:** El test `wcag-status-messages.ts` no generó issues para `/contacto/`. Posible causa: el formulario requiere interacción más compleja (submit real) que el test no realiza, o el MutationObserver no captura el cambio.
-- **Fix:** Investigar si el test ejecuta submit en `/contacto/`. Si no, ampliar la interacción (rellenar campos + submit) o verificar que el observer espera suficiente tiempo tras la acción.
+### ~~MEDIUM-11: `status-messages` no detecta RM-11 (WCAG 4.1.3) en /contacto/~~ ✅ CERRADO (v7)
+- **Estado:** Verificado — el scanner detecta 14 issues en `/contacto/` (checkValidity + MutationObserver). Gap cerrado.
 
-### MEDIUM-12: `hover-focus` no detecta RM-15 (WCAG 1.4.13) en /equipo/
-- **Referencia Auditoria manual de referencia:** RM-15 — tarjetas de personas en `/equipo/` muestran info en hover que no es persistente, hoverable ni descartable
-- **Issue:** El test `wcag-hover-focus.ts` no generó issues pese a que Auditoria manual de referencia confirmó incumplimiento. Posible causa: las tarjetas usan CSS `:hover` puro sin JS, y el test puede no estar detectando contenido CSS-only que aparece/desaparece.
-- **Fix:** Verificar que el test detecta `opacity`/`visibility`/`display` transitions activadas por `:hover` CSS (no solo JS hover handlers). Revisar si los triggers en `/equipo/` están siendo descubiertos.
+### MEDIUM-12: `hover-focus` no detecta RM-15 (WCAG 1.4.13) en /equipo/ — popup CSS-only
+- **Estado:** Parcialmente cubierto — Tier 2 detecta 13 issues de `state-change-contrast` en `/equipo/` (hover sin cambio visual suficiente). Pero el popup detection no detecta contenido CSS-only que aparece con `:hover` (opacity/display transitions) porque `dispatchEvent("mouseover")` no activa CSS `:hover`.
+- **Fix pendiente:** Para detectar popups CSS-only, necesitaría `page.mouse.move()` real sobre elementos candidatos. Requiere path separado del batched hover (impacto en P2 performance). Alternativa: heurística estática que busque hijos con `opacity:0`/`display:none` + regla CSS `:hover` que los muestra.
 
 ### MEDIUM-13: `sensory-instructions` no detecta RM-13 (WCAG 1.3.3) en /formulario/
 - **Referencia Auditoria manual de referencia:** RM-13 — formulario con instrucciones implícitas que dependen del contexto visual (obligatoriedad por estilo/color)

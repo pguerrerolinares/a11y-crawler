@@ -21,14 +21,18 @@ function makeSemanticIssue(
 }
 
 /** Exported for testing: does this computed style look like a heading? */
-export function isPseudoHeadingStyle(fontSize: number, fontWeight: number, textLength: number): boolean {
+export function isPseudoHeadingStyle(fontSize: number, fontWeight: number, textLength: number, parentFontSize?: number): boolean {
   if (textLength === 0 || textLength > 120) return false;
+  // Compare against parent font-size to avoid FP on sites with 18px+ base font
+  if (parentFontSize && parentFontSize > 0) {
+    return (fontSize >= parentFontSize * 1.3 && fontSize >= 16) || (fontSize >= 14 && fontWeight >= 700);
+  }
   return fontSize >= 18 || (fontSize >= 14 && fontWeight >= 700);
 }
 
 /** Exported for testing: do these rects look like a list? */
 export function isPseudoListLayout(rects: Array<{ height: number; left: number }>): boolean {
-  if (rects.length < 3) return false;
+  if (rects.length < 5) return false; // 5+ items to avoid matching card grids
   const heights = rects.map((r) => r.height);
   const lefts = rects.map((r) => r.left);
   const heightDelta = Math.max(...heights) - Math.min(...heights);
@@ -62,7 +66,11 @@ export async function testSemanticStructure(page: Page, url: string): Promise<Is
       const textLength = text.length;
 
       if (textLength === 0 || textLength > 120) return;
-      const isHeadingStyle = fontSize >= 18 || (fontSize >= 14 && fontWeight >= 700);
+      // Compare against parent font-size to avoid FP on sites with 18px+ base font
+      const parentFontSize = el.parentElement ? parseFloat(getComputedStyle(el.parentElement).fontSize) : 0;
+      const isHeadingStyle = parentFontSize > 0
+        ? (fontSize >= parentFontSize * 1.3 && fontSize >= 16) || (fontSize >= 14 && fontWeight >= 700)
+        : fontSize >= 18 || (fontSize >= 14 && fontWeight >= 700);
       if (!isHeadingStyle) return;
 
       // Not already inside a heading
@@ -92,7 +100,7 @@ export async function testSemanticStructure(page: Page, url: string): Promise<Is
           return !["UL", "OL", "LI", "TABLE", "THEAD", "TBODY", "SCRIPT", "STYLE"].includes(tag)
             && getComputedStyle(c).display !== "none";
         });
-      if (children.length < 3) return;
+      if (children.length < 5) return; // 5+ to avoid matching card grids
       // Already a list
       if (container.tagName === "UL" || container.tagName === "OL") return;
 
