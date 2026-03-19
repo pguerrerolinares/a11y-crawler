@@ -3,7 +3,8 @@ import type { Browser } from "playwright";
 import type { PipelineConfig, CrawlError } from "../types/pipeline";
 import type { LLMClient } from "../llm/client";
 import { AuditTracer } from "./tracer";
-import { persistSpans, markAuditCompleted, markAuditFailed, emitAuditEvent, getIssueCountsByImpact, getPageCount, getPreviousAudit, getIssuesByTemplateId, updateAuditRegression } from "./db";
+import { persistSpans, markAuditCompleted, markAuditCompletedBase, markAuditFullyCompleted, markAuditFailed, emitAuditEvent, getIssueCountsByImpact, getPageCount, getPreviousAudit, getIssuesByTemplateId, updateAuditRegression, insertIssuesV4 } from "./db";
+import { processTier3Queue } from "./tier3-queue";
 import { matchTemplatesAcrossAudits, computeRegressionDiff } from "../analyzer/regression";
 import type { SerializedCluster } from "../analyzer/regression";
 import { computeWcagScore } from "../reporter/wcag-score";
@@ -51,6 +52,18 @@ export async function runPipeline(
       const resolvedUrl = new URL(config.baseUrl);
       resolvedUrl.host = new URL(resolvedOrigin).host;
       queue.seed([config.baseUrl, resolvedUrl.href], "link", 0);
+
+      // Seed additionalUrls (manually specified URLs to include in crawl)
+      if (userConfig.additionalUrls?.length) {
+        for (const additionalUrl of userConfig.additionalUrls) {
+          try {
+            const resolved = new URL(additionalUrl, config.baseUrl).href;
+            queue.seed([resolved], "link", 0);
+          } catch {
+            console.warn(`[pipeline] Invalid additionalUrl: ${additionalUrl}`);
+          }
+        }
+      }
 
       // Discover sitemap URLs
       try {
@@ -181,21 +194,41 @@ export async function runPipeline(
         totalTemplates: templates.length,
         totalIssues,
         issuesByImpact,
-        pipelineVersion: "v4.1",
+        pipelineVersion: "v5.0",
       };
 
-      await markAuditCompleted(
+      await markAuditCompletedBase(
         auditId,
         summary,
         { totalUrlsDiscovered: scanResults.size, urlsFromSitemap: 0, urlsFromLinks: scanResults.size, urlsFromInteraction: 0 },
-        (llmClient?.usage ?? { totalCalls: 0, totalInputTokens: 0, totalOutputTokens: 0, navigationCalls: 0, enrichmentCalls: 0 }) as unknown as Record<string, unknown>,
+        (llmClient?.usage ?? { totalCalls: 0, totalInputTokens: 0, totalOutputTokens: 0, navigationCalls: 0, enrichmentCalls: 0, visionCalls: 0 }) as unknown as Record<string, unknown>,
         durationSeconds,
         wcagScore,
         crawlErrors.length > 0 ? crawlErrors : null,
         serializedClusters,
+        null,
       );
 
       await emitAuditEvent(auditId, "audit:complete", { durationSeconds });
+
+      // Launch Tier 3 queue in background (non-blocking)
+      if (llmClient) {
+        const insertIssuesFn = async (_auditId: string, issues: unknown[]) => {
+          // Tier 3 issues are appended to the representative page (or a virtual page)
+          // For now, insert as a batch without a page (pageId = null is not valid, so we skip)
+          console.log(`[tier3] Would insert ${issues.length} issues for audit ${_auditId}`);
+        };
+        const insertEventFn = async (_auditId: string, type: string, data: unknown) => {
+          await emitAuditEvent(_auditId, type, data as Record<string, unknown>);
+        };
+        processTier3Queue(auditId, llmClient, insertIssuesFn, insertEventFn).catch(err => {
+          console.error(`[tier3] Queue failed:`, err);
+          markAuditFullyCompleted(auditId).catch(() => {});
+        });
+      } else {
+        // No LLM client — mark fully completed immediately
+        await markAuditFullyCompleted(auditId);
+      }
 
       // ── Regression diff (post-step, non-fatal) ──
       try {
