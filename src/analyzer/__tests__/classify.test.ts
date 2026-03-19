@@ -166,28 +166,29 @@ describe("buildTestPlan", () => {
     expect(plan).toContain("aria-states");
     expect(plan).toContain("color-use");
     expect(plan).toContain("legal-a11y");
-    expect(plan).toHaveLength(13);
+    expect(plan).toContain("state-change-contrast");
+    expect(plan).toHaveLength(14);
   });
 
   test("adds multimedia and timed-events when hasMedia", () => {
     const plan = buildTestPlan(makeCluster({ hasMedia: true }));
     expect(plan).toContain("multimedia");
     expect(plan).toContain("timed-events");
-    expect(plan).toHaveLength(15);
+    expect(plan).toHaveLength(16);
   });
 
   test("adds timed-events when hasCarousel", () => {
     const plan = buildTestPlan(makeCluster({ hasCarousel: true }));
     expect(plan).toContain("timed-events");
     expect(plan).not.toContain("multimedia");
-    expect(plan).toHaveLength(14);
+    expect(plan).toHaveLength(15);
   });
 
   test("no duplicate timed-events when both hasMedia and hasCarousel", () => {
     const plan = buildTestPlan(makeCluster({ hasMedia: true, hasCarousel: true }));
     const timedCount = plan.filter((t) => t === "timed-events").length;
     expect(timedCount).toBe(1);
-    expect(plan).toHaveLength(15);
+    expect(plan).toHaveLength(16);
   });
 
   test("includes error-identification when hasForms is true", () => {
