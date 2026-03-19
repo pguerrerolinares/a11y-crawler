@@ -55,7 +55,7 @@ async function listIssues(filterCol: "audit_id" | "page_id", filterVal: string, 
 
   const where = conditions.join(" AND ");
   const issues = await db.unsafe(
-    `SELECT * FROM issues WHERE ${where} ORDER BY created_at ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+    `SELECT i.*, p.url as page_url FROM issues i LEFT JOIN pages p ON p.id = i.page_id WHERE ${where} ORDER BY i.created_at ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
     [...values, limit, offset]
   );
   const [{ count: total }] = await db.unsafe(
@@ -108,6 +108,7 @@ function mapIssueRow(row: Record<string, unknown>): IssueResponse {
     id: row.id,
     pageId: row.page_id,
     auditId: row.audit_id,
+    pageUrl: (row.page_url as string) ?? null,
     rule: row.rule,
     impact: row.impact,
     description: row.description,

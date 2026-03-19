@@ -64,6 +64,7 @@ export interface IssueResponse {
   id: string;
   pageId: string;
   auditId: string;
+  pageUrl: string | null;
   rule: string;
   impact: string;
   description: string | null;
