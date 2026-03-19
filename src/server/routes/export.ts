@@ -83,7 +83,7 @@ async function exportCsv(auditId: string): Promise<Response> {
               Array.isArray(issue.wcag_tags)
                 ? issue.wcag_tags.join(";")
                 : (typeof issue.wcag_tags === "string" ? issue.wcag_tags : ""),
-              extractWcagCriterion(issue.wcag_tags) ?? "",
+              extractWcagCriterion(issue.wcag_tags, issue.rule) ?? "",
               issue.llm_confidence ?? "",
               issue.suggested_fix ?? "",
             ].map(csvEscape).join(",");

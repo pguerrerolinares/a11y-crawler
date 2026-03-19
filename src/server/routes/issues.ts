@@ -129,7 +129,7 @@ function mapIssueRow(row: Record<string, unknown>): IssueResponse {
     suggestedFix: row.suggested_fix,
     fixConfidence: row.fix_confidence,
     llmConfidence: row.llm_confidence ?? null,
-    wcagCriterion: extractWcagCriterion(row.wcag_tags),
+    wcagCriterion: extractWcagCriterion(row.wcag_tags, row.rule),
     createdAt: row.created_at,
   };
 }
