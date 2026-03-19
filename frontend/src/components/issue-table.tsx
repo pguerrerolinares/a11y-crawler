@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -70,14 +70,26 @@ interface IssueTableProps {
   pageId?: string;
 }
 
+function useDebouncedValue<T>(value: T, delay = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
+
 export function IssueTable({ auditId, pageId }: IssueTableProps) {
   const [impact, setImpact] = useState("");
   const [source, setSource] = useState("");
-  const [rule, setRule] = useState("");
+  const [ruleInput, setRuleInput] = useState("");
   const [pageFilter, setPageFilter] = useState("");
   const [offset, setOffset] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
   const limit = 20;
+
+  // Debounce rule input so we don't fire a query on every keystroke
+  const rule = useDebouncedValue(ruleInput);
 
   // Fetch pages for this audit (for the page filter dropdown)
   const { data: pagesData } = useQuery({
@@ -140,8 +152,8 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
         )}
         <Input
           placeholder="Filter by rule..."
-          value={rule}
-          onChange={(e) => { setRule(e.target.value); setOffset(0); }}
+          value={ruleInput}
+          onChange={(e) => { setRuleInput(e.target.value); setOffset(0); }}
           className="w-48"
         />
       </div>
