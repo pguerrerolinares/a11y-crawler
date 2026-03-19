@@ -274,11 +274,12 @@ This allows instant rollback in production if issues are discovered.
 | Change | Time saved | Risk |
 |--------|-----------|------|
 | Remove testKeyboardOperability (after fixes) | ~15-25s | Low (after prereqs) |
-| Short-circuit Tier 1 cross-origin | ~30s | Minimal |
 | disableAnimations cleanup | 0s (correctness) | Low |
 | hover-focus sub-tests | 0s (quality fix) | Medium |
 | Code maintainability | Indirect | Low |
-| **Total** | **~45-55s** | — |
+| **Total** | **~15-25s** | — |
+
+Note: Short-circuit Tier 1 cross-origin is counted in Phase 2 (~1s). Not repeated here.
 
 Note: The keyboard-operability savings are counted here (in the restructure) rather than in Phase 2, because the prerequisite fixes are part of this restructure.
 
@@ -288,10 +289,10 @@ Note: The keyboard-operability savings are counted here (in the restructure) rat
 
 | | Current | +Phase 1 (RAM) | +Phase 2 (Redundancy) | +Phase 3 (Restructure) |
 |---|---|---|---|---|
-| **Duration** | 261s | 261s | ~218-228s | **~173-193s** |
-| **Improvement** | — | 0% | -13-17% | **-26-34%** |
+| **Duration** | 261s | 261s | ~218-228s | **~193-213s** |
+| **Improvement** | — | 0% | -13-17% | **-18-26%** |
 
-Note: Phase 2 saves ~33-43s. Phase 3 saves ~45-55s (includes keyboard-operability removal). Estimates are conservative — actual savings depend on site complexity and template count.
+Note: Phase 2 saves ~33-43s (axe-full in scan + Tier 1 short-circuit). Phase 3 saves ~15-25s (keyboard-operability removal after prereq fixes). Estimates are conservative — actual savings depend on site complexity and template count.
 
 ### RAM
 
