@@ -53,11 +53,28 @@ Bun.serve({
             }
 
             const response = await handleApiRoute(req, url);
-            // Only cache successful responses
+            // Only cache successful responses for completed audits
+            // (running/pending audits change state and must not be cached)
             if (response.status === 200) {
-              const cachedResponse = await setCached(cacheKey, response, ttl);
-              logRequest(reqClone, cachedResponse.clone(), Date.now() - start);
-              return cachedResponse;
+              const isJson = response.headers.get("content-type")?.includes("application/json");
+              const body = await response.text();
+              let shouldCache = true;
+              if (isJson) {
+                try {
+                  const json = JSON.parse(body);
+                  if (json.status && json.status !== "completed") shouldCache = false;
+                } catch {
+                  console.warn(`Cache: failed to parse JSON response for ${cacheKey}`);
+                }
+              }
+              const rebuilt = new Response(body, { status: response.status, headers: response.headers });
+              if (shouldCache) {
+                const cachedResponse = await setCached(cacheKey, rebuilt, ttl);
+                logRequest(reqClone, cachedResponse.clone(), Date.now() - start);
+                return cachedResponse;
+              }
+              logRequest(reqClone, rebuilt.clone(), Date.now() - start);
+              return rebuilt;
             }
             logRequest(reqClone, response.clone(), Date.now() - start);
             return response;

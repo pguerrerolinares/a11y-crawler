@@ -119,11 +119,49 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 
 ## MEDIUM — Data Quality (actualizado)
 
-### MEDIUM-9 (actualizado): 1,657 issues (66.6%) sin wcagCriterion
-- **Prioridad actualizada:** MEDIUM → **HIGH** — afecta a 2/3 de todos los issues, no solo `region`
-- **Archivo:** Pipeline de issues → DB (`wcag_tags` vacío para reglas custom e interactive)
-- **Issue:** 1,657 de 2,487 issues no tienen WCAG criterion. Afecta a reglas de todas las fuentes: `region` (scan-light), `focus-indicator-missing` (interactive), `color-use-link-color-only` (wcag-custom), `skip-nav-missing`, `keyboard-trap`, `target-size`, etc.
-- **Fix:** Crear lookup table rule → WCAG criterion para todas las reglas custom e interactive. Para axe-core, extraer de `axe.result.tags`. Persistir en `wcag_tags` al insertar.
+### ~~MEDIUM-9: 1,657 issues (66.6%) sin wcagCriterion~~ RESUELTO
+- **Estado:** RESUELTO en commit `17c43bf` (2026-03-19)
+- **Fix aplicado:** `extractWcagCriterion` ampliado con slug lookup + rule name fallback + soporte tags legacy con puntos. `makeWcagIssue` corregido con `replaceAll`. Resultado: 100% de issues con WCAG criterion.
+
+---
+
+## HIGH — Performance
+
+### HIGH-2: Per-test timing necesario para diagnosticar regresiones de rendimiento
+- **Archivo:** `src/worker/probe.ts`
+- **Issue:** No hay timing individual por test. La auditoría pasó de 931s (v4.3, 30 páginas) a 1,734s (v4.5, 33 páginas) — +86% por solo 3 tests nuevos. Sin timing por test es imposible saber cuál domina y optimizar.
+- **Estimación de impacto:** Los 3 tests nuevos (`aria-states`, `hover-focus`, `state-change-contrast`) se ejecutan secuencialmente en 32 URLs con timeout 30s. Estimado: ~800-1300s solo de estos 3 tests.
+- **Fix:** Añadir `console.time`/`console.timeEnd` o `Date.now()` diffs por cada bloque `testPlan.includes(...)` en probe.ts. Persistir en `audit_spans` metadata o como campo en page results. Mínimo: log por test con `{test, url, durationMs}`.
+
+### HIGH-3: `waitForTimeout` excesivo en tests interactivos
+- **Archivos:** `src/analyzer/wcag-state-change-contrast.ts`, `src/analyzer/wcag-hover-focus.ts`, `src/analyzer/wcag-aria-states.ts`
+- **Issue:** `state-change-contrast` tiene 600ms de waits por elemento × 20 elementos × 2 estados = 12s de solo sleep por página × 32 URLs = ~384s de espera pura. `hover-focus` y `aria-states` tienen patterns similares.
+- **Fix:** Reducir `waitForTimeout(200)` a 50-100ms (transiciones CSS rara vez tardan >50ms). Validar con tests que los resultados no cambian. Potencial ahorro: ~8-10s por página × 32 = ~256-320s.
+
+### MEDIUM-14: Tests interactivos podrían fusionar pasadas por elemento
+- **Archivos:** `src/analyzer/wcag-state-change-contrast.ts`, `src/analyzer/wcag-hover-focus.ts`
+- **Issue:** `state-change-contrast` y `hover-focus` ambos hacen hover → read styles → reset → focus → read styles. Se ejecutan secuencialmente haciendo la misma interacción 2 veces por elemento.
+- **Fix:** Fusionar en una sola pasada: hover → read (ambos tests) → focus → read (ambos tests). Requiere refactor del interfaz pero ahorraría ~50% del tiempo de ambos tests.
+
+### MEDIUM-15: Screenshots LLM vision enviadas sin crop — coste y tokens innecesarios
+- **Archivo:** `src/analyzer/wcag-color-use.ts:130-200`
+- **Issue:** Tier 2 captura screenshot del viewport completo (1280×720+) y Tier 3 envía 2 imágenes resize a 800px al LLM. Pero si Tier 1 (DOM heuristics) ya identificó elementos concretos (links sin underline, status indicators), el LLM solo necesita ver la región relevante, no la página entera.
+- **Fix:** Después de Tier 1, hacer crop del bounding box de los elementos sospechosos (+padding de contexto ~50px). Enviar al LLM solo los crops (~200-400px) en vez del viewport completo (800px). Reduce tokens de imagen de ~1000+ a ~200-400 por imagen. Ahorro estimado: 50-70% del coste de visión.
+
+### MEDIUM-16: Screenshots de evidencia se guardan para todas las deficiencias
+- **Archivo:** `src/analyzer/wcag-color-use.ts:267-274`
+- **Issue:** Se guardan screenshots normal+CVD para CADA deficiency (deuteranopia, achromatopsia) independientemente del `diffPercent`. Para deficiencies con diff < 0.5% (sin issues), los screenshots ocupan espacio sin aportar evidencia.
+- **Fix:** Solo guardar screenshots de evidencia cuando `diffPercent > threshold` (0.5%). Reduce almacenamiento y I/O en auditorías sin problemas de color.
+
+### MEDIUM-17: Tier 3 LLM podría recibir contexto textual + crop en vez de página completa
+- **Archivo:** `src/analyzer/wcag-color-use.ts:186-226`
+- **Issue:** El LLM recibe 2 screenshots completas (800px) y debe descubrir qué zonas comparar. Si pixelmatch ya calculó las regiones de diferencia, se podría enviar: (a) crop de la zona con mayor diff, (b) descripción textual de qué elementos están en esa zona (de Tier 1). Reduce tokens y mejora accuracy del LLM al focalizarlo.
+- **Fix:** Usar pixelmatch para localizar bounding box del diff, crop ambas imágenes a esa región (+padding), y añadir al prompt qué elementos de Tier 1 están en esa zona.
+
+### LOW-5: Template dedup no reduce ejecuciones de tests CSS-only
+- **Archivo:** `src/worker/probe.ts`
+- **Issue:** Tests como `state-change-contrast` que evalúan CSS (no contenido) se ejecutan en 32 URLs representativas, pero muchas comparten template CSS. Bastaría con 1 URL por template (25 en vez de 32) para tests que no dependen del contenido.
+- **Fix:** Marcar tests como `content-dependent` vs `style-dependent`. Para `style-dependent`, ejecutar solo en 1 URL por template. Requiere clasificación de tests.
 
 ---
 
