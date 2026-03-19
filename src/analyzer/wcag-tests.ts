@@ -1,7 +1,9 @@
 import type { Page } from "playwright";
 import type { Issue, ImpactLevel } from "../types/issue";
 import { parseRgba, alphaBlend, relativeLuminance, contrastRatio } from "./contrast";
+import { makeWcagIssue } from "./utils";
 
+// Thin wrapper preserving the "visual" category used by all tests in this file.
 function makeIssue(
   url: string,
   rule: string,
@@ -10,47 +12,7 @@ function makeIssue(
   selector: string,
   wcagCriterion?: string,
 ): Issue {
-  return {
-    id: crypto.randomUUID(),
-    url,
-    rule,
-    impact,
-    description,
-    help: description,
-    helpUrl: wcagCriterion
-      ? `https://www.w3.org/WAI/WCAG22/Understanding/${wcagCriterionToSlug(wcagCriterion)}`
-      : "",
-    wcagTags: wcagCriterion ? [`wcag${wcagCriterion.replace(".", "")}`] : [],
-    selector,
-    html: "",
-    surroundingHtml: "",
-    xpath: "",
-    viewportWidth: 0,
-    pageTitle: "",
-    checkSource: "wcag-custom",
-    suggestedFix: null,
-    fixConfidence: null,
-    llmConfidence: null,
-    wcagCriterion: wcagCriterion ?? null,
-    violationCategory: "visual",
-  };
-}
-
-const CRITERION_SLUGS: Record<string, string> = {
-  "1.4.10": "reflow",
-  "1.4.12": "text-spacing",
-  "1.4.4": "resize-text",
-  "1.2.1": "audio-only-and-video-only-prerecorded",
-  "2.2.1": "timing-adjustable",
-  "2.2.2": "pause-stop-hide",
-  "2.5.8": "target-size-minimum",
-  "3.3.1": "error-identification",
-  "3.3.3": "error-suggestion",
-  "1.4.11": "non-text-contrast",
-};
-
-function wcagCriterionToSlug(criterion: string): string {
-  return CRITERION_SLUGS[criterion] ?? "";
+  return makeWcagIssue(url, rule, impact, description, selector, wcagCriterion, "visual");
 }
 
 /**

@@ -1,38 +1,7 @@
 // src/analyzer/wcag-legal-checks.ts
 import type { Page } from "playwright";
-import type { Issue, ImpactLevel } from "../types/issue";
-
-function makeIssue(
-  url: string,
-  rule: string,
-  impact: ImpactLevel,
-  description: string,
-  selector: string,
-  wcagCriterion: string,
-): Issue {
-  return {
-    id: crypto.randomUUID(),
-    url,
-    rule,
-    impact,
-    description,
-    help: description,
-    helpUrl: `https://www.w3.org/WAI/WCAG22/Understanding/${wcagCriterion === "2.4.1" ? "bypass-blocks" : ""}`,
-    wcagTags: wcagCriterion ? [`wcag${wcagCriterion.replace(".", "")}`] : [],
-    selector,
-    html: "",
-    surroundingHtml: "",
-    xpath: "",
-    viewportWidth: 0,
-    pageTitle: "",
-    checkSource: "wcag-custom",
-    suggestedFix: null,
-    fixConfidence: null,
-    llmConfidence: null,
-    wcagCriterion,
-    violationCategory: "structural",
-  };
-}
+import type { Issue } from "../types/issue";
+import { makeWcagIssue } from "./utils";
 
 /**
  * WCAG 2.4.1 — Skip Navigation + Ley 11/2023 — Accessibility Declaration
@@ -43,29 +12,33 @@ export async function testLegalA11y(page: Page, url: string): Promise<Issue[]> {
 
   // --- Check 1: Skip Navigation (WCAG 2.4.1) ---
   const skipResult = await page.evaluate(() => {
-    // Look for a skip link among the first 5 interactive elements in the DOM
-    const interactives = document.querySelectorAll("a[href], button, [tabindex]");
-    const first5 = Array.from(interactives).slice(0, 5);
-
     const skipPatterns = /saltar|skip|ir al contenido|jump to|main content|aller au contenu/i;
     const skipHrefPatterns = /#main|#content|#contenido|#principal/i;
+
+    // Look for a skip link among the first 5 interactive elements in the DOM.
+    // Require href to start with '#' to ensure it's an in-page anchor.
+    const interactives = document.querySelectorAll("a[href], button, [tabindex]");
+    const first5 = Array.from(interactives).slice(0, 5);
 
     for (const el of first5) {
       const text = (el.textContent || "").trim();
       const href = el.getAttribute("href") || "";
-      if (skipPatterns.test(text) || skipHrefPatterns.test(href)) {
+      if (
+        href.startsWith("#") &&
+        (skipPatterns.test(text) || skipHrefPatterns.test(href))
+      ) {
         return { hasSkipLink: true };
       }
     }
 
-    // Also check for any visually-hidden skip link anywhere in the page
+    // Fallback: any visually-hidden skip link anywhere in the page
     const allLinks = document.querySelectorAll("a[href]");
     for (const link of allLinks) {
       const text = (link.textContent || "").trim();
       const href = link.getAttribute("href") || "";
       if (
-        (skipPatterns.test(text) || skipHrefPatterns.test(href)) &&
-        (href.startsWith("#"))
+        href.startsWith("#") &&
+        (skipPatterns.test(text) || skipHrefPatterns.test(href))
       ) {
         return { hasSkipLink: true };
       }
@@ -75,7 +48,7 @@ export async function testLegalA11y(page: Page, url: string): Promise<Issue[]> {
   });
 
   if (!skipResult.hasSkipLink) {
-    issues.push(makeIssue(
+    issues.push(makeWcagIssue(
       url,
       "skip-nav-missing",
       "moderate",
@@ -87,26 +60,25 @@ export async function testLegalA11y(page: Page, url: string): Promise<Issue[]> {
 
   // --- Check 2: Accessibility Declaration (Ley 11/2023) ---
   const declResult = await page.evaluate(() => {
-    const declarationPatterns = /accesibilidad|accessibility|accessibilit[eé]/i;
-    const hrefPatterns = /accesibilidad|accessibility|declaraci[oó]n.*accesib/i;
+    // Require specific phrasing to avoid false negatives from generic "accessibility" links
+    const declarationTextPattern = /declaraci[oó]n\s*(de\s*)?accesibilidad|accessibility\s+statement|accessibility\s+declaration|accessibilit[eé]\s+d[ée]claration/i;
+    const declarationHrefPattern = /declaraci[oó]n.*accesib|accessibility[-_]statement|accesibilidad/i;
 
-    // Search in footer first (most common location)
+    // Search footer first (most common location), then fall back to whole body
     const footer = document.querySelector("footer, [role='contentinfo']");
-    const searchAreas = footer
-      ? [footer, document.body]
-      : [document.body];
+    const searchAreas = footer ? [footer, document.body] : [document.body];
 
     for (const area of searchAreas) {
       const links = area.querySelectorAll("a[href]");
       for (const link of links) {
-        const text = (link.textContent || "").trim().toLowerCase();
+        const text = (link.textContent || "").trim();
         const href = (link.getAttribute("href") || "").toLowerCase();
 
         if (
-          (declarationPatterns.test(text) && text.length < 80) ||
-          hrefPatterns.test(href)
+          (declarationTextPattern.test(text) && text.length < 80) ||
+          declarationHrefPattern.test(href)
         ) {
-          return { hasDeclaration: true, matchedText: text, matchedHref: href };
+          return { hasDeclaration: true };
         }
       }
     }
@@ -115,13 +87,12 @@ export async function testLegalA11y(page: Page, url: string): Promise<Issue[]> {
   });
 
   if (!declResult.hasDeclaration) {
-    issues.push(makeIssue(
+    issues.push(makeWcagIssue(
       url,
       "accessibility-declaration-missing",
       "serious",
       "No accessibility declaration found on the page. Spanish Law 11/2023 (Ley de Accesibilidad Digital) requires a published accessibility statement including conformance status, contact procedure for complaints, and link to the competent authority.",
       "body",
-      "",
     ));
   }
 
