@@ -139,10 +139,11 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Rule</TableHead>
+                  <TableHead className="hidden md:table-cell">Page</TableHead>
                   <TableHead>Impact</TableHead>
                   <TableHead>Source</TableHead>
-                  <TableHead className="hidden md:table-cell">Category</TableHead>
-                  <TableHead className="hidden lg:table-cell">Suggested Fix</TableHead>
+                  <TableHead className="hidden lg:table-cell">Category</TableHead>
+                  <TableHead className="hidden xl:table-cell">Suggested Fix</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -153,6 +154,9 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                       onClick={() => setExpanded(expanded === issue.id ? null : issue.id)}
                     >
                       <TableCell className="font-mono text-xs">{issue.rule}</TableCell>
+                      <TableCell className="hidden md:table-cell text-xs max-w-[200px] truncate" title={issue.pageUrl ?? ""}>
+                        {issue.pageUrl ? new URL(issue.pageUrl).pathname : "—"}
+                      </TableCell>
                       <TableCell>
                         <Badge className={impactColors[issue.impact] ?? ""} variant="secondary">
                           {issue.impact}
@@ -164,14 +168,14 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                         </Badge>
                         <ConfidenceBadge confidence={issue.llmConfidence} />
                       </TableCell>
-                      <TableCell className="hidden md:table-cell text-xs">{issue.category ?? "—"}</TableCell>
-                      <TableCell className="hidden lg:table-cell text-xs max-w-xs truncate">
+                      <TableCell className="hidden lg:table-cell text-xs">{issue.category ?? "—"}</TableCell>
+                      <TableCell className="hidden xl:table-cell text-xs max-w-xs truncate">
                         {issue.suggestedFix ?? "—"}
                       </TableCell>
                     </TableRow>
                     {expanded === issue.id && (
                       <TableRow key={`${issue.id}-detail`}>
-                        <TableCell colSpan={5} className="bg-muted/30">
+                        <TableCell colSpan={6} className="bg-muted/30">
                           <div className="space-y-2 text-xs p-2">
                             {issue.pageUrl && (
                               <p><strong>Page:</strong> <a href={issue.pageUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">{issue.pageUrl}</a></p>
@@ -213,7 +217,7 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                 ))}
                 {filtered.data.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                       No issues found
                     </TableCell>
                   </TableRow>
