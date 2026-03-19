@@ -173,6 +173,9 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                       <TableRow key={`${issue.id}-detail`}>
                         <TableCell colSpan={5} className="bg-muted/30">
                           <div className="space-y-2 text-xs p-2">
+                            {issue.pageUrl && (
+                              <p><strong>Page:</strong> <a href={issue.pageUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">{issue.pageUrl}</a></p>
+                            )}
                             <p><strong>Description:</strong> {issue.description}</p>
                             <p><strong>Selector:</strong> <code className="bg-muted px-1 rounded">{issue.selector}</code></p>
                             {issue.html && (
