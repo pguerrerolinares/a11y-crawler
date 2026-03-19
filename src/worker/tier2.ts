@@ -275,7 +275,7 @@ export async function runTier2(
         await adaptiveWait(page, popup.selector, "re-hover-real", 200);
 
         // 1. PERSISTENCE: move mouse away from trigger, check if popup stays
-        await page.mouse.move(triggerBox.x - 50, triggerBox.y - 50);
+        await page.mouse.move(Math.max(0, triggerBox.x - 50), Math.max(0, triggerBox.y - 50));
         await adaptiveWait(page, popup.selector, "persistence", 300);
         const stillVisible = await page.evaluate((sel) => {
           const el = document.querySelector(sel);

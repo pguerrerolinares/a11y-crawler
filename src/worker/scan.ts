@@ -43,7 +43,7 @@ export async function runScanPhase(
         const page = await context.newPage();
         try {
           // Navigate with error handling
-          let response: any = null;
+          let response: Awaited<ReturnType<typeof page.goto>> | null = null;
           try {
             response = await page.goto(url, {
               waitUntil: "domcontentloaded",
