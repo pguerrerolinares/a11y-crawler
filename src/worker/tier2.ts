@@ -243,18 +243,21 @@ export async function runTier2(
     if (!handle) continue;
 
     try {
-      // 1. HOVER
-      await handle.hover();
-      await adaptiveWait(page, element.selector, "hover", 200);
+      // 1. HOVER — use dispatchEvent to bypass Playwright auto-wait (no actionability checks needed,
+      // we only read computed styles). dispatchEvent('mouseover') triggers CSS :hover rules instantly.
+      await handle.dispatchEvent("mouseover");
+      await adaptiveWait(page, element.selector, "hover", 50);
       result.hoverStyles = await captureStyles(page, element.selector);
       result.hoverPopup = await detectPopup(page, element);
-      await page.mouse.move(0, 0);
-      await adaptiveWait(page, element.selector, "reset", 100);
+      await handle.dispatchEvent("mouseout");
       timer.recordInteraction("hovers");
 
-      // 2. FOCUS
-      await handle.focus();
-      await adaptiveWait(page, element.selector, "focus", 200);
+      // 2. FOCUS — use evaluate to bypass Playwright auto-wait. We only need :focus CSS to activate.
+      await page.evaluate((sel) => {
+        const el = document.querySelector(sel) as HTMLElement;
+        el?.focus();
+      }, element.selector);
+      await adaptiveWait(page, element.selector, "focus", 50);
       result.focusStyles = await captureStyles(page, element.selector);
       result.focusPopup = await detectPopup(page, element);
       await page.evaluate((sel) => { (document.querySelector(sel) as HTMLElement)?.blur(); }, element.selector);
@@ -274,13 +277,13 @@ export async function runTier2(
 
         if (isSafe) {
           const before = await captureAriaStates(page, element.selector);
-          await handle.click();
-          await adaptiveWait(page, element.selector, "click", 300);
+          await handle.click({ force: true, timeout: 2000 });
+          await adaptiveWait(page, element.selector, "click", 100);
           const after = await captureAriaStates(page, element.selector);
           result.ariaStateChanged = JSON.stringify(before) !== JSON.stringify(after);
           if (result.ariaStateChanged && after["aria-expanded"] !== before["aria-expanded"]) {
-            await handle.click().catch(() => {});
-            await adaptiveWait(page, element.selector, "reset", 200);
+            await handle.click({ force: true, timeout: 2000 }).catch(() => {});
+            await adaptiveWait(page, element.selector, "reset", 50);
           }
           timer.recordInteraction("clicks");
         }
@@ -288,11 +291,13 @@ export async function runTier2(
 
       // 4. KEYBOARD (only for custom interactive elements)
       if (element.role && !isNativeInteractive(element.tag)) {
-        await handle.focus();
+        await page.evaluate((sel) => {
+          (document.querySelector(sel) as HTMLElement)?.focus();
+        }, element.selector);
         const urlBefore = page.url();
         const originBefore = new URL(urlBefore).origin;
         await page.keyboard.press("Enter");
-        await adaptiveWait(page, element.selector, "keyboard", 300);
+        await adaptiveWait(page, element.selector, "keyboard", 100);
         const urlAfter = page.url();
         const navigated = urlAfter !== urlBefore;
         result.keyboardResponded = navigated || !!result.ariaStateChanged;
