@@ -10,6 +10,7 @@ import { handleLogs } from "./routes/logs.ts";
 import { handleExport } from "./routes/export.ts";
 import { handleSSE } from "./routes/sse.ts";
 import { handleScreenshots } from "./routes/screenshots.ts";
+import { getCached, setCached, getTtlForPath } from "./middleware/cache.ts";
 
 const env = validateEnv();
 
@@ -39,6 +40,30 @@ Bun.serve({
     try {
       // API routes
       if (url.pathname.startsWith("/api/")) {
+        // Cache layer: only GET requests, only cacheable paths
+        if (req.method === "GET") {
+          const cacheKey = url.pathname + url.search;
+          const ttl = getTtlForPath(url.pathname);
+
+          if (ttl !== null) {
+            const cached = getCached(cacheKey);
+            if (cached) {
+              logRequest(reqClone, cached.clone(), Date.now() - start);
+              return cached;
+            }
+
+            const response = await handleApiRoute(req, url);
+            // Only cache successful responses
+            if (response.status === 200) {
+              const cachedResponse = await setCached(cacheKey, response, ttl);
+              logRequest(reqClone, cachedResponse.clone(), Date.now() - start);
+              return cachedResponse;
+            }
+            logRequest(reqClone, response.clone(), Date.now() - start);
+            return response;
+          }
+        }
+
         const response = await handleApiRoute(req, url);
         const responseClone = response.clone();
         logRequest(reqClone, responseClone, Date.now() - start);
