@@ -26,29 +26,29 @@ async function listIssues(filterCol: "audit_id" | "page_id", filterVal: string, 
   const params = Object.fromEntries(url.searchParams);
   const { limit, offset, impact, rule, category, source } = IssueFilterSchema.parse(params);
 
-  const conditions = [`${filterCol} = $1`];
+  const conditions = [`i.${filterCol} = $1`];
   const values: (string | number)[] = [filterVal];
   let paramIdx = 2;
 
   if (impact) {
     const impacts = impact.split(",");
     const placeholders = impacts.map((_, i) => `$${paramIdx + i}`).join(", ");
-    conditions.push(`impact IN (${placeholders})`);
+    conditions.push(`i.impact IN (${placeholders})`);
     values.push(...impacts);
     paramIdx += impacts.length;
   }
   if (rule) {
-    conditions.push(`rule = $${paramIdx}`);
+    conditions.push(`i.rule = $${paramIdx}`);
     values.push(rule);
     paramIdx++;
   }
   if (category) {
-    conditions.push(`category = $${paramIdx}`);
+    conditions.push(`i.category = $${paramIdx}`);
     values.push(category);
     paramIdx++;
   }
   if (source) {
-    conditions.push(`check_source = $${paramIdx}`);
+    conditions.push(`i.check_source = $${paramIdx}`);
     values.push(source);
     paramIdx++;
   }
@@ -59,7 +59,7 @@ async function listIssues(filterCol: "audit_id" | "page_id", filterVal: string, 
     [...values, limit, offset]
   );
   const [{ count: total }] = await db.unsafe(
-    `SELECT COUNT(*)::int as count FROM issues WHERE ${where}`,
+    `SELECT COUNT(*)::int as count FROM issues i WHERE ${where}`,
     values
   );
 
