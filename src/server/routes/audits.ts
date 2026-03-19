@@ -1,6 +1,7 @@
 import { getDb } from "../db/client.ts";
 import { CreateAuditSchema, PaginationSchema } from "../types.ts";
 import type { AuditResponse } from "../types.ts";
+import { invalidateAll } from "../middleware/cache.ts";
 
 
 export async function handleAudits(req: Request, url: URL): Promise<Response> {
@@ -44,6 +45,7 @@ async function createAudit(req: Request): Promise<Response> {
   `;
 
   // Worker will pick up the pending audit from the queue
+  invalidateAll();
   return Response.json({
     id: audit.id,
     url: audit.url,
@@ -98,6 +100,7 @@ async function getAudit(id: string): Promise<Response> {
 async function deleteAudit(id: string): Promise<Response> {
   const db = getDb();
   await db`DELETE FROM audits WHERE id = ${id}`;
+  invalidateAll();
   return new Response(null, { status: 204 });
 }
 
