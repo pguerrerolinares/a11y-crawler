@@ -74,9 +74,17 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
   const [impact, setImpact] = useState("");
   const [source, setSource] = useState("");
   const [rule, setRule] = useState("");
+  const [pageFilter, setPageFilter] = useState("");
   const [offset, setOffset] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
   const limit = 20;
+
+  // Fetch pages for this audit (for the page filter dropdown)
+  const { data: pagesData } = useQuery({
+    queryKey: ["pages", auditId],
+    queryFn: () => api.pages.list(auditId),
+    enabled: !pageId,
+  });
 
   const params = new URLSearchParams();
   params.set("limit", String(limit));
@@ -84,13 +92,14 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
   if (impact) params.set("impact", impact);
   if (rule) params.set("rule", rule);
   if (source) params.set("source", source);
+  if (pageFilter) params.set("page", pageFilter);
 
   const fetcher = pageId
     ? () => api.issues.byPage(pageId, params.toString())
     : () => api.issues.byAudit(auditId, params.toString());
 
   const { data: filtered, isLoading } = useQuery({
-    queryKey: ["issues", auditId, pageId, impact, source, rule, offset],
+    queryKey: ["issues", auditId, pageId, impact, source, rule, pageFilter, offset],
     queryFn: fetcher,
   });
 
@@ -116,6 +125,19 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
             <SelectItem value="interactive">Interactive</SelectItem>
           </SelectContent>
         </Select>
+        {!pageId && pagesData?.data && pagesData.data.length > 1 && (
+          <Select value={pageFilter} onValueChange={(v: string | null) => { setPageFilter(!v || v === "all" ? "" : v); setOffset(0); }}>
+            <SelectTrigger className="w-48" aria-label="Filter by page"><SelectValue placeholder="Page" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All pages</SelectItem>
+              {pagesData.data.map((p: { id: string; url: string }) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {new URL(p.url).pathname}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Input
           placeholder="Filter by rule..."
           value={rule}
