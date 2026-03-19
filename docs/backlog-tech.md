@@ -119,7 +119,7 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 
 ## MEDIUM — Data Quality (actualizado)
 
-### ~~MEDIUM-9: 1,657 issues (66.6%) sin wcagCriterion~~ RESUELTO
+### ~~MEDIUM-9: Axe best-practice rules sin wcagCriterion ni etiqueta~~ RESUELTO
 - **Estado:** RESUELTO en commit `17c43bf` (2026-03-19)
 - **Fix aplicado:** `extractWcagCriterion` ampliado con slug lookup + rule name fallback + soporte tags legacy con puntos. `makeWcagIssue` corregido con `replaceAll`. Resultado: 100% de issues con WCAG criterion.
 
@@ -127,16 +127,26 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 
 ## HIGH — Performance
 
-### HIGH-2: Per-test timing necesario para diagnosticar regresiones de rendimiento
-- **Archivo:** `src/worker/probe.ts`
-- **Issue:** No hay timing individual por test. La auditoría pasó de 931s (v4.3, 30 páginas) a 1,734s (v4.5, 33 páginas) — +86% por solo 3 tests nuevos. Sin timing por test es imposible saber cuál domina y optimizar.
-- **Estimación de impacto:** Los 3 tests nuevos (`aria-states`, `hover-focus`, `state-change-contrast`) se ejecutan secuencialmente en 32 URLs con timeout 30s. Estimado: ~800-1300s solo de estos 3 tests.
-- **Fix:** Añadir `console.time`/`console.timeEnd` o `Date.now()` diffs por cada bloque `testPlan.includes(...)` en probe.ts. Persistir en `audit_spans` metadata o como campo en page results. Mínimo: log por test con `{test, url, durationMs}`.
+### ~~HIGH-2: Per-test timing necesario para diagnosticar regresiones de rendimiento~~ RESUELTO
+- **Estado:** RESUELTO en v5 (2026-03-19)
+- **Fix aplicado:** `TierTimer` implementado en `src/worker/manifest.ts`. Timing por tier (Tier 0/1/2/3) persistido en `audit_spans`. Endpoint `GET /api/audits/:id/performance` expone breakdown completo con `perTemplate`, `tierBreakdown`, `savings`.
 
-### HIGH-3: `waitForTimeout` excesivo en tests interactivos
-- **Archivos:** `src/analyzer/wcag-state-change-contrast.ts`, `src/analyzer/wcag-hover-focus.ts`, `src/analyzer/wcag-aria-states.ts`
-- **Issue:** `state-change-contrast` tiene 600ms de waits por elemento × 20 elementos × 2 estados = 12s de solo sleep por página × 32 URLs = ~384s de espera pura. `hover-focus` y `aria-states` tienen patterns similares.
-- **Fix:** Reducir `waitForTimeout(200)` a 50-100ms (transiciones CSS rara vez tardan >50ms). Validar con tests que los resultados no cambian. Potencial ahorro: ~8-10s por página × 32 = ~256-320s.
+### ~~HIGH-3: `waitForTimeout` excesivo en tests interactivos~~ RESUELTO
+- **Estado:** RESUELTO en v5 (2026-03-19)
+- **Fix aplicado:** `waitForTimeout` reemplazado por `dispatchEvent` + `disableAnimations` en Tier 2 (`src/worker/unified-interaction.ts`). El adaptive wait (`adaptiveWait`) usa `waitForFunction` con ceiling en vez de fixed sleep. Resultado: 702 interacciones en 52s en audit de example-client.com (vs ~640s estimados antes).
+
+### HIGH-4: Sistema de monitorización automática de auditorías (visualización CI-style)
+- **Contexto:** La monitorización del progreso de auditorías se hace manualmente via curl + polling de API.
+- **Propuesta:** Sistema automatizado que tracka el progreso en tiempo real, capturando timing tier-a-tier, conteo de issues y transiciones de fase.
+- **Visualización frontend:** Grafo de pipeline estilo GitHub CI mostrando `DISCOVER → SCAN → CLASSIFY → PROBE (Tier0→1→2→3)` con timing por fase, estado verde/rojo y progreso en vivo.
+- **API disponible:** `GET /api/audits/:id/performance` provee todos los datos de tier necesarios.
+- **SSE:** Reutilizar eventos SSE para actualizaciones en tiempo real.
+
+### HIGH-5: Tier 1 CSSOM no resuelve ningún elemento (skippedByFingerprint=0)
+- **Observado:** En audit v5 de example-client.com: Tier 1 promovió TODOS los 351 elementos a Tier 2, resolvió 0, saltó 0.
+- **Causa probable:** Todo el CSS es cross-origin (CDN), el análisis CSSOM hover devuelve null para todo.
+- **Impacto:** Tier 1 añade ~1s de overhead sin beneficio en este tipo de sitio.
+- **Fix options:** (a) detectar cross-origin temprano y saltar análisis CSSOM; (b) añadir más heurísticas Tier 1 que no dependan de CSSOM (ej. atributos `data-*`, clases con patrones hover conocidos).
 
 ### MEDIUM-14: Tests interactivos podrían fusionar pasadas por elemento
 - **Archivos:** `src/analyzer/wcag-state-change-contrast.ts`, `src/analyzer/wcag-hover-focus.ts`
