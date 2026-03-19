@@ -18,6 +18,7 @@ import { testHoverFocus } from "../analyzer/wcag-hover-focus";
 import { testColorUse } from "../analyzer/wcag-color-use";
 import { testSensoryInstructions } from "../analyzer/wcag-sensory-instructions";
 import { testLegalA11y } from "../analyzer/wcag-legal-checks";
+import { testStateChangeContrast } from "../analyzer/wcag-state-change-contrast";
 
 const TEMPLATE_LEVEL_RULES = new Set([
   "color-contrast", "color-contrast-enhanced", "heading-order",
@@ -38,6 +39,7 @@ const TEMPLATE_LEVEL_RULES = new Set([
   "sensory-instruction",
   // v4.5
   "skip-nav-missing", "accessibility-declaration-missing",
+  "state-change-low-contrast",
 ]);
 
 export async function runProbePhase(
@@ -108,6 +110,10 @@ export async function runProbePhase(
           }
           if (cluster.testPlan.includes("hover-focus")) {
             const r = await withTimeout(testHoverFocus(page, url));
+            if (r) allIssues.push(...r);
+          }
+          if (cluster.testPlan.includes("state-change-contrast")) {
+            const r = await withTimeout(testStateChangeContrast(page, url));
             if (r) allIssues.push(...r);
           }
           if (cluster.testPlan.includes("status-messages")) {

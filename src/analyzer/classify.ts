@@ -48,7 +48,7 @@ export function buildTestPlan(cluster: TemplateCluster): TestType[] {
   if (cluster.capabilities.hasCarousel) plan.push("timed-events");
   if (cluster.capabilities.hasForms) plan.push("error-identification", "status-messages");
   // hover-focus and aria-states: always run (detect interactive widgets)
-  plan.push("hover-focus", "aria-states");
+  plan.push("hover-focus", "aria-states", "state-change-contrast");
   // v4.4 — LLM-augmented tests (always run; degrade gracefully if no LLM)
   plan.push("color-use");
   if (cluster.capabilities.hasForms) plan.push("sensory-instructions");
