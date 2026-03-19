@@ -22,6 +22,7 @@ export class ContextSlot {
     if (!this.context || this.pagesSinceRecycle >= this.pagesPerContext) {
       if (this.context) {
         try { await this.context.close(); } catch { /* disconnected */ }
+        if (typeof Bun !== 'undefined') Bun.gc(false);
       }
       const freshBrowser = await getBrowser();
       this.context = await freshBrowser.newContext({

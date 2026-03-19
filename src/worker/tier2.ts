@@ -147,11 +147,24 @@ export function evaluateKeyboard(
   element: ElementManifest,
   result: InteractionResult,
   url: string,
+  isFocusable: boolean = true,
 ): Issue[] {
-  if (!element.role || isNativeInteractive(element.tag)) return [];
+  // Skip native interactive elements (keyboard handled by browser)
+  if (isNativeInteractive(element.tag)) return [];
+  // Skip elements that are neither custom role nor onclick
+  if (!element.role && !element.hasOnclick) return [];
+
+  // Pre-check: custom interactive element must be focusable
+  if (!isFocusable) {
+    return [makeIssue(element.selector, url, "custom-element-not-focusable",
+      `Custom interactive element (${element.role ? `role="${element.role}"` : "[onclick]"}) is not keyboard focusable — needs tabindex="0" (WCAG 2.1.1)`,
+      "2.1.1", "critical")];
+  }
+
   if (result.keyboardResponded === false) {
+    const label = element.role ? `role="${element.role}"` : "[onclick]";
     return [makeIssue(element.selector, url, "keyboard-operability",
-      `Custom interactive element (role="${element.role}") does not respond to Enter/Space keyboard (WCAG 2.1.1)`,
+      `Custom interactive element (${label}) does not respond to Enter/Space keyboard (WCAG 2.1.1)`,
       "2.1.1")];
   }
   return [];
@@ -249,6 +262,62 @@ export async function runTier2(
       await adaptiveWait(page, element.selector, "hover", 50);
       result.hoverStyles = await captureStyles(page, element.selector);
       result.hoverPopup = await detectPopup(page, element);
+
+      // WCAG 1.4.13 sub-tests: persistence, hoverability, dismissibility
+      // These use page.mouse.move() (real pointer movement) because we need to test
+      // actual mouse interaction behavior (dispatchEvent doesn't activate CSS :hover).
+      if (result.hoverPopup) {
+        const popup = result.hoverPopup;
+        const triggerBox = element.boundingBox;
+
+        // Re-trigger hover with real mouse to ensure browser :hover is active
+        await page.mouse.move(triggerBox.x + triggerBox.width / 2, triggerBox.y + triggerBox.height / 2);
+        await adaptiveWait(page, popup.selector, "re-hover-real", 200);
+
+        // 1. PERSISTENCE: move mouse away from trigger, check if popup stays
+        await page.mouse.move(triggerBox.x - 50, triggerBox.y - 50);
+        await adaptiveWait(page, popup.selector, "persistence", 300);
+        const stillVisible = await page.evaluate((sel) => {
+          const el = document.querySelector(sel);
+          if (!el) return false;
+          const cs = getComputedStyle(el);
+          return cs.visibility !== "hidden" && cs.display !== "none" && cs.opacity !== "0"
+            && el.getBoundingClientRect().height > 0;
+        }, popup.selector);
+        result.popupPersistent = stillVisible;
+
+        // 2. HOVERABILITY: move mouse to popup, check if it remains
+        if (stillVisible) {
+          const popupBox = popup.boundingBox;
+          await page.mouse.move(popupBox.x + popupBox.width / 2, popupBox.y + popupBox.height / 2);
+          await adaptiveWait(page, popup.selector, "hoverability", 100);
+          result.popupHoverable = await page.evaluate((sel) => {
+            const el = document.querySelector(sel);
+            if (!el) return false;
+            const cs = getComputedStyle(el);
+            return cs.visibility !== "hidden" && cs.display !== "none" && cs.opacity !== "0"
+              && el.getBoundingClientRect().height > 0;
+          }, popup.selector);
+        } else {
+          result.popupHoverable = false;
+        }
+
+        // 3. DISMISSIBILITY: press Escape, check if popup closes
+        await page.mouse.move(triggerBox.x + triggerBox.width / 2, triggerBox.y + triggerBox.height / 2);
+        await adaptiveWait(page, popup.selector, "re-hover", 200);
+        await page.keyboard.press("Escape");
+        await adaptiveWait(page, popup.selector, "dismiss", 200);
+        const dismissed = await page.evaluate((sel) => {
+          const el = document.querySelector(sel);
+          if (!el) return true; // element removed = dismissed
+          const cs = getComputedStyle(el);
+          return cs.visibility === "hidden" || cs.display === "none" || cs.opacity === "0"
+            || el.getBoundingClientRect().height === 0;
+        }, popup.selector);
+        result.popupDismissible = dismissed;
+      }
+
+      // Clean up hover state before next element
       await handle.dispatchEvent("mouseout");
       timer.recordInteraction("hovers");
 
@@ -289,33 +358,46 @@ export async function runTier2(
         }
       }
 
-      // 4. KEYBOARD (only for custom interactive elements)
-      if (element.role && !isNativeInteractive(element.tag)) {
-        await page.evaluate((sel) => {
-          (document.querySelector(sel) as HTMLElement)?.focus();
+      // 4. KEYBOARD (custom interactive elements + onclick without role)
+      const isCustomInteractive = (element.role && !isNativeInteractive(element.tag)) ||
+                                   (!element.role && element.hasOnclick);
+      if (isCustomInteractive) {
+        // Pre-check focusability
+        const isFocusable = await page.evaluate((sel) => {
+          const el = document.querySelector(sel) as HTMLElement;
+          if (!el) return false;
+          if (el.tabIndex >= 0) return true;
+          return false;
         }, element.selector);
-        const urlBefore = page.url();
-        const originBefore = new URL(urlBefore).origin;
-        await page.keyboard.press("Enter");
-        await adaptiveWait(page, element.selector, "keyboard", 100);
-        const urlAfter = page.url();
-        const navigated = urlAfter !== urlBefore;
-        result.keyboardResponded = navigated || !!result.ariaStateChanged;
-        if (navigated) {
-          const originAfter = new URL(urlAfter).origin;
-          if (originAfter === originBefore) {
-            await page.goBack({ waitUntil: "domcontentloaded", timeout: 5000 }).catch(() => {});
-          } else {
-            await page.goto(urlBefore, { waitUntil: "domcontentloaded", timeout: 10000 }).catch(() => {});
+
+        if (isFocusable) {
+          await page.evaluate((sel) => {
+            (document.querySelector(sel) as HTMLElement)?.focus();
+          }, element.selector);
+          const urlBefore = page.url();
+          const originBefore = new URL(urlBefore).origin;
+          await page.keyboard.press("Enter");
+          await adaptiveWait(page, element.selector, "keyboard", 100);
+          const urlAfter = page.url();
+          const navigated = urlAfter !== urlBefore;
+          result.keyboardResponded = navigated || !!result.ariaStateChanged;
+          if (navigated) {
+            const originAfter = new URL(urlAfter).origin;
+            if (originAfter === originBefore) {
+              await page.goBack({ waitUntil: "domcontentloaded", timeout: 5000 }).catch(() => {});
+            } else {
+              await page.goto(urlBefore, { waitUntil: "domcontentloaded", timeout: 10000 }).catch(() => {});
+            }
           }
         }
+
         timer.recordInteraction("keyboardTests");
+        allIssues.push(...evaluateKeyboard(element, result, url, isFocusable));
       }
 
       allIssues.push(...evaluateStateChange(element, result, url));
       allIssues.push(...evaluateHoverFocus(element, result, url));
       allIssues.push(...evaluateAriaStates(element, result, url));
-      allIssues.push(...evaluateKeyboard(element, result, url));
     } catch {
       // Element interaction failed — skip
     } finally {

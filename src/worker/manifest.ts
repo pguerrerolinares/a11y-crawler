@@ -53,7 +53,7 @@ export async function collectManifest(
 ): Promise<ElementManifest[]> {
   const elements = await page.evaluate((maxEls: number) => {
     const SELECTORS =
-      'a, button, input, select, textarea, [role="button"], [role="tab"], [role="menuitem"], [role="link"], [tabindex]';
+      'a, button, input, select, textarea, [role="button"], [role="tab"], [role="menuitem"], [role="link"], [tabindex], [onclick]:not(a):not(button):not(input):not(select):not(textarea)';
 
     const nodes = Array.from(document.querySelectorAll(SELECTORS)).filter(
       (el) => {
@@ -152,6 +152,7 @@ export async function collectManifest(
         hasAriaPressed: element.hasAttribute("aria-pressed"),
         hasUnderline: cs.textDecorationLine.includes("underline"),
         isFormControl: ["input", "select", "textarea"].includes(tag),
+        hasOnclick: element.hasAttribute("onclick"),
         defaultStyles,
         parentBg,
         styleFingerprint,

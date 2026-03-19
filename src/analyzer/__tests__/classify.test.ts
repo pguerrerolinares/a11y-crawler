@@ -48,7 +48,7 @@ function makeScanResult(overrides: Partial<ScanResult> = {}): ScanResult {
     links: [],
     elementCount: 50,
     capabilities: makeCapabilities(),
-    lightIssues: [],
+    axeIssues: [],
     pageId: "page-1",
     discoveryMethod: "standard",
     ...overrides,
@@ -116,24 +116,24 @@ describe("clusterPages", () => {
     expect(clusters[0].capabilities.hasMedia).toBe(true);
   });
 
-  test("aggregates lightIssues from all pages", () => {
+  test("aggregates axeIssues from all pages", () => {
     const issue1 = makeIssue({ id: "i1" });
     const issue2 = makeIssue({ id: "i2" });
     const results: ScanResult[] = [
       makeScanResult({
         url: "https://example.com/items/1",
         fingerprint: "same",
-        lightIssues: [issue1],
+        axeIssues: [issue1],
       }),
       makeScanResult({
         url: "https://example.com/items/2",
         fingerprint: "same",
-        lightIssues: [issue2],
+        axeIssues: [issue2],
       }),
     ];
     const clusters = clusterPages(results);
     expect(clusters).toHaveLength(1);
-    expect(clusters[0].lightIssues).toHaveLength(2);
+    expect(clusters[0].axeIssues).toHaveLength(2);
   });
 });
 
@@ -146,7 +146,7 @@ describe("buildTestPlan", () => {
       urls: ["https://example.com/test"],
       representative: "https://example.com/test",
       capabilities: makeCapabilities(caps),
-      lightIssues: [],
+      axeIssues: [],
       testPlan: [],
     };
   }
@@ -219,7 +219,7 @@ describe("selectRepresentative", () => {
       urls: ["https://example.com/a", "https://example.com/b"],
       representative: "https://example.com/a",
       capabilities: makeCapabilities(),
-      lightIssues: [],
+      axeIssues: [],
       testPlan: [],
     };
     const scanMap = new Map<string, ScanResult>([
@@ -240,7 +240,7 @@ describe("selectRepresentative", () => {
       urls: ["https://example.com/x", "https://example.com/y"],
       representative: "https://example.com/x",
       capabilities: makeCapabilities(),
-      lightIssues: [],
+      axeIssues: [],
       testPlan: [],
     };
     const scanMap = new Map<string, ScanResult>([
@@ -251,12 +251,12 @@ describe("selectRepresentative", () => {
     expect(rep).toBe("https://example.com/x");
   });
 
-  test("considers lightIssues in scoring", () => {
+  test("considers axeIssues in scoring", () => {
     const scan1 = makeScanResult({ url: "https://example.com/p1", capabilities: makeCapabilities() });
     const scan2 = makeScanResult({
       url: "https://example.com/p2",
       capabilities: makeCapabilities(),
-      lightIssues: [makeIssue()],
+      axeIssues: [makeIssue()],
     });
     const cluster: TemplateCluster = {
       id: "c3",
@@ -265,7 +265,7 @@ describe("selectRepresentative", () => {
       urls: ["https://example.com/p1", "https://example.com/p2"],
       representative: "https://example.com/p1",
       capabilities: makeCapabilities(),
-      lightIssues: [],
+      axeIssues: [],
       testPlan: [],
     };
     const scanMap = new Map<string, ScanResult>([
@@ -290,7 +290,7 @@ describe("prioritizeTemplates", () => {
       urls: Array.from({ length: urlCount }, (_, i) => `https://example.com/${id}/${i}`),
       representative: `https://example.com/${id}/0`,
       capabilities: makeCapabilities(caps),
-      lightIssues: [],
+      axeIssues: [],
       testPlan: [],
     };
   }

@@ -15,7 +15,7 @@ export interface ScanResult {
   links: string[];
   elementCount: number;
   capabilities: PageCapabilities;
-  lightIssues: Issue[];
+  axeIssues: Issue[];
   pageId: string;
   discoveryMethod: "standard" | "networkidle-retry" | "llm";
 }
@@ -51,7 +51,7 @@ export interface TemplateCluster {
   urls: string[];
   representative: string;
   capabilities: PageCapabilities;
-  lightIssues: Issue[];
+  axeIssues: Issue[];
   testPlan: TestType[];
 }
 
@@ -97,7 +97,7 @@ export const DEFAULT_PIPELINE_CONFIG: Omit<PipelineConfig, "baseUrl"> = {
   wcagLevel: "AA",
   pageTimeout: 15_000,
   concurrency: 3,
-  pagesPerContext: 25,
+  pagesPerContext: 5,
   probePagesPerContext: 5,
   maxProbeTemplates: 25,
   navModel: "kimi-k2-turbo-preview",

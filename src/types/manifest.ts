@@ -10,6 +10,7 @@ export interface ElementManifest {
   hasAriaPressed: boolean;
   hasUnderline: boolean;
   isFormControl: boolean;
+  hasOnclick: boolean;
   defaultStyles: {
     borderColor: string;
     outlineColor: string;

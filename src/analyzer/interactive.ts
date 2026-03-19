@@ -13,7 +13,6 @@ export async function runInteractiveTests(page: Page, pageUrl: string): Promise<
     testTabOrder,
     testFocusVisibility,
     testSkipNavigation,
-    testKeyboardOperability,
   ];
 
   for (const testFn of tests) {

@@ -8,7 +8,7 @@ import type { Page } from "playwright";
  * Call once per page before running Tier 2 interactions.
  */
 export async function disableAnimations(page: Page): Promise<void> {
-  await page.addStyleTag({
+  const handle = await page.addStyleTag({
     content: `
       *, *::before, *::after {
         transition-duration: 0s !important;
@@ -17,6 +17,19 @@ export async function disableAnimations(page: Page): Promise<void> {
         animation-delay: 0s !important;
       }
     `,
+  });
+  await handle.evaluate(el => el.setAttribute('data-disable-animations', 'true'));
+}
+
+/**
+ * Re-enable CSS animations/transitions. Call at the boundary between
+ * Phase 2 (interaction) and Phase 3 (viewport) to ensure viewport tests
+ * and screenshots see real animation state.
+ */
+export async function enableAnimations(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const tag = document.querySelector('style[data-disable-animations]');
+    if (tag) tag.remove();
   });
 }
 

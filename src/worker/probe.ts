@@ -1,7 +1,8 @@
 // src/worker/probe.ts
 import type { Browser, Page } from "playwright";
 import type { Issue } from "../types/issue";
-import type { TemplateCluster, TestType, PipelineConfig } from "../types/pipeline";
+import type { TemplateCluster, PipelineConfig } from "../types/pipeline";
+import type { ElementManifest, StyleGroup } from "../types/manifest";
 import { AxeBuilder } from "@axe-core/playwright";
 import { ProbeContextManager } from "./probe-context";
 import { insertPageV4, insertIssuesV4, insertTier3Job } from "./db";
@@ -20,6 +21,8 @@ import { collectManifest, groupByFingerprint } from "./manifest";
 import { runTier1 } from "./tier1";
 import { runTier2 } from "./tier2";
 import { TierTimer } from "./tier-timer";
+import { enableAnimations } from "./adaptive-wait";
+import { join } from "node:path";
 
 const TEMPLATE_LEVEL_RULES = new Set([
   "color-contrast", "color-contrast-enhanced", "heading-order",
@@ -45,6 +48,13 @@ const TEMPLATE_LEVEL_RULES = new Set([
   "state-change-contrast", "hover-focus", "aria-states", "keyboard-operability",
 ]);
 
+// Feature flag: use 4-phase probe structure (default: true)
+// Set PROBE_V2=false to fall back to legacy single-pass probe for debugging.
+const USE_PHASED_PROBE = process.env.PROBE_V2 !== "false";
+
+const withTimeout = <T>(fn: Promise<T>, ms = 30_000): Promise<T | null> =>
+  Promise.race([fn, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+
 export async function runProbePhase(
   getBrowser: () => Promise<Browser>,
   auditId: string,
@@ -52,6 +62,7 @@ export async function runProbePhase(
   config: PipelineConfig,
   tracer: AuditTracer,
   llmClient: LLMClient | null = null,
+  axeCache?: Map<string, Issue[]>,
 ): Promise<void> {
   const probeCtx = new ProbeContextManager(getBrowser, config.probePagesPerContext);
 
@@ -72,118 +83,47 @@ export async function runProbePhase(
 
           const allIssues: Issue[] = [];
 
-          // --- Tier 0: Element Interaction Manifest ---
-          timer.startTier("tier0");
-          const manifest = await collectManifest(page);
-          const styleGroups = groupByFingerprint(manifest);
-          timer.endTier("tier0", {
-            elementsDiscovered: manifest.length,
-            styleGroups: styleGroups.length,
-            representativeElements: styleGroups.length,
-          });
-
-          // 1. axe-core full (needs clean DOM — run first)
-          if (cluster.testPlan.includes("axe-full")) {
-            const axeIssues = await runAxeFull(page, url, config);
-            allIssues.push(...axeIssues);
-            parentSpan.setMeta({ axeViolations: axeIssues.length });
-          }
-
-          // 1.5. Error identification (form interaction — must run before interactive tests)
-          if (cluster.testPlan.includes("error-identification")) {
-            const errorIdIssues = await testErrorIdentification(page, url);
-            allIssues.push(...errorIdIssues);
-            parentSpan.setMeta({ errorIdViolations: errorIdIssues.length });
-          }
-
-          // 2. page.evaluate()-only tests (parallel) — unchanged
-          const evaluateTests: Promise<Issue[]>[] = [];
-          if (cluster.testPlan.includes("target-size")) evaluateTests.push(testTargetSize(page, url));
-          if (cluster.testPlan.includes("multimedia")) evaluateTests.push(testMultimedia(page, url));
-          if (cluster.testPlan.includes("timed-events")) evaluateTests.push(testTimedEvents(page, url));
-          if (cluster.testPlan.includes("non-text-contrast")) evaluateTests.push(testNonTextContrast(page, url));
-          if (cluster.testPlan.includes("meaningful-sequence")) evaluateTests.push(testMeaningfulSequence(page, url));
-          if (cluster.testPlan.includes("semantic-structure")) evaluateTests.push(testSemanticStructure(page, url));
-          if (cluster.testPlan.includes("legal-a11y")) evaluateTests.push(testLegalA11y(page, url));
-          const evaluateResults = await Promise.all(evaluateTests);
-          allIssues.push(...evaluateResults.flat());
-
-          // 3. Interactive tests (legacy — kept for non-tiered rules)
-          if (cluster.testPlan.includes("interactive")) {
-            const interactiveIssues = await runInteractiveTests(page, url);
-            allIssues.push(...interactiveIssues);
-          }
-
-          // --- Tier 1: DOM/CSSOM Analysis (replaces separate state-change, hover-focus, aria-states) ---
-          const { issues: tier1Issues, promotedElements } = await runTier1(page, styleGroups, url, timer);
-          allIssues.push(...tier1Issues);
-
-          // --- Tier 2: Unified Interaction Pass (only elements Tier 1 couldn't resolve) ---
-          const { issues: tier2Issues, promotedToTier3 } = await runTier2(page, promotedElements, url, timer);
-          allIssues.push(...tier2Issues);
-
-          // --- Tier 3: Queue async LLM vision jobs ---
-          if (promotedToTier3.length > 0 && llmClient) {
-            const tier3Elements = promotedToTier3.map(el => ({
-              selector: el.selector,
-              context: `${el.tag} element: ${el.accessibleName || el.selector}`,
-              promptType: "color-use-link", // default; specialized by test context
-            }));
-            await insertTier3Job(auditId, cluster.id, tier3Elements, 2).catch(err => {
-              console.warn(`[probe] Failed to insert tier3 job: ${err}`);
+          if (USE_PHASED_PROBE) {
+            // ── Tier 0: Element Interaction Manifest (shared across Phase 1 and 2) ──
+            timer.startTier("tier0");
+            const manifest = await collectManifest(page);
+            const styleGroups = groupByFingerprint(manifest);
+            timer.endTier("tier0", {
+              elementsDiscovered: manifest.length,
+              styleGroups: styleGroups.length,
+              representativeElements: styleGroups.length,
             });
+
+            // ── Phase 1: Static — Tier 1, axe, evaluate tests (no DOM mutation) ──
+            const { issues: phase1Issues, promotedElements } = await runPhase1Static(
+              page, cluster, url, timer, styleGroups, axeCache, config, llmClient, parentSpan,
+            );
+            allIssues.push(...phase1Issues);
+
+            // ── Phase 2: Interaction — Tier 2, interactive tests, re-enable animations ──
+            const { issues: phase2Issues, promotedToTier3 } = await runPhase2Interaction(
+              page, promotedElements, url, timer, cluster,
+            );
+            allIssues.push(...phase2Issues);
+
+            // ── Phase 3: Viewport — reflow, resize-text, text-spacing ──
+            const phase3Issues = await runPhase3Viewport(page, url, cluster);
+            allIssues.push(...phase3Issues);
+
+            // ── Phase 4: Capture — color-use screenshots, status messages, Tier 3 queue ──
+            const phase4Issues = await runPhase4Capture(
+              page, url, cluster, auditId, llmClient, promotedToTier3,
+            );
+            allIssues.push(...phase4Issues);
+          } else {
+            // Legacy probe (single-pass for debugging/rollback)
+            const result = await runProbeLegacy(
+              page, cluster, url, timer, axeCache, config, llmClient, auditId, parentSpan,
+            );
+            allIssues.push(...result);
           }
 
-          // 3.5. Status messages (form autofill — not replaced by tier system)
-          const withTimeout = <T>(fn: Promise<T>, ms = 30_000): Promise<T | null> =>
-            Promise.race([fn, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
-
-          if (cluster.testPlan.includes("status-messages")) {
-            const r = await withTimeout(testStatusMessages(page, url));
-            if (r) allIssues.push(...r);
-          }
-
-          // 4. Viewport tests (sequential — each modifies viewport)
-          if (cluster.testPlan.includes("reflow")) {
-            allIssues.push(...await testReflow(page, url));
-          }
-          if (cluster.testPlan.includes("resize-text")) {
-            allIssues.push(...await testResizeText(page, url));
-          }
-
-          // 5. Text spacing (CSS injection — modifies page, run last)
-          if (cluster.testPlan.includes("text-spacing")) {
-            allIssues.push(...await testTextSpacing(page, url));
-          }
-
-          // 6. CVD color analysis (screenshots — run after viewport tests restore)
-          if (cluster.testPlan.includes("color-use")) {
-            const colorResult = await withTimeout(testColorUse(page, url, llmClient), 45_000);
-            if (colorResult) {
-              allIssues.push(...colorResult.issues);
-              if (colorResult.screenshots.length > 0) {
-                const { join } = await import("node:path");
-                const screenshotDir = join(
-                  process.env.REPORTS_DIR || "./reports",
-                  auditId, "screenshots",
-                );
-                await Bun.write(join(screenshotDir, ".keep"), "");
-                const templatePrefix = cluster.id.slice(0, 8);
-                for (const ss of colorResult.screenshots) {
-                  await Bun.write(join(screenshotDir, `${templatePrefix}-${ss.deficiency}-normal.png`), ss.normalPng);
-                  await Bun.write(join(screenshotDir, `${templatePrefix}-${ss.deficiency}-cvd.png`), ss.cvdPng);
-                }
-              }
-            }
-          }
-
-          // 7. Sensory instructions (LLM text analysis — can run anytime)
-          if (cluster.testPlan.includes("sensory-instructions")) {
-            const r = await withTimeout(testSensoryInstructions(page, url, llmClient), 30_000);
-            if (r) allIssues.push(...r);
-          }
-
-          // --- Template amplification ---
+          // ── Template amplification ──
           const templateIssues = allIssues.filter((i) => TEMPLATE_LEVEL_RULES.has(i.rule));
 
           // Representative page: ALL issues
@@ -245,10 +185,6 @@ export async function runProbePhase(
             totalIssues: allIssues.length,
             templateIssues: templateIssues.length,
             amplifiedToPages: cluster.urls.length - 1,
-            tier0Elements: manifest.length,
-            tier1Issues: tier1Issues.length,
-            tier2Issues: tier2Issues.length,
-            tier3Queued: promotedToTier3.length,
             tierTiming: timer.getTiming(),
           });
         } finally {
@@ -262,6 +198,276 @@ export async function runProbePhase(
   }
 }
 
+// ── Phase 1: Static (Tier 1, axe, evaluate tests — no DOM mutation) ──
+
+async function runPhase1Static(
+  page: Page,
+  cluster: TemplateCluster,
+  url: string,
+  timer: TierTimer,
+  styleGroups: StyleGroup[],
+  axeCache: Map<string, Issue[]> | undefined,
+  config: PipelineConfig,
+  llmClient: LLMClient | null,
+  parentSpan: { setMeta: (m: Record<string, unknown>) => void },
+): Promise<{ issues: Issue[]; promotedElements: ElementManifest[] }> {
+  const issues: Issue[] = [];
+
+  // Tier 1: CSSOM hover contrast
+  const { issues: tier1Issues, promotedElements } = await runTier1(page, styleGroups, url, timer);
+  issues.push(...tier1Issues);
+
+  // axe-core (from cache or fallback)
+  if (cluster.testPlan.includes("axe-full")) {
+    let axeIssues: Issue[];
+    if (axeCache?.has(url)) {
+      axeIssues = axeCache.get(url)!;
+    } else {
+      axeIssues = await runAxeFull(page, url, config);
+    }
+    issues.push(...axeIssues);
+    parentSpan.setMeta({ axeViolations: axeIssues.length });
+  }
+
+  // Error identification (must run before interactive tests)
+  if (cluster.testPlan.includes("error-identification")) {
+    const errorIdIssues = await testErrorIdentification(page, url);
+    issues.push(...errorIdIssues);
+    parentSpan.setMeta({ errorIdViolations: errorIdIssues.length });
+  }
+
+  // page.evaluate()-only tests (parallel, read-only)
+  const evaluateTests: Promise<Issue[]>[] = [];
+  if (cluster.testPlan.includes("target-size")) evaluateTests.push(testTargetSize(page, url));
+  if (cluster.testPlan.includes("multimedia")) evaluateTests.push(testMultimedia(page, url));
+  if (cluster.testPlan.includes("timed-events")) evaluateTests.push(testTimedEvents(page, url));
+  if (cluster.testPlan.includes("non-text-contrast")) evaluateTests.push(testNonTextContrast(page, url));
+  if (cluster.testPlan.includes("meaningful-sequence")) evaluateTests.push(testMeaningfulSequence(page, url));
+  if (cluster.testPlan.includes("semantic-structure")) evaluateTests.push(testSemanticStructure(page, url));
+  if (cluster.testPlan.includes("legal-a11y")) evaluateTests.push(testLegalA11y(page, url));
+  const evalResults = await Promise.all(evaluateTests);
+  issues.push(...evalResults.flat());
+
+  // Sensory instructions (LLM text analysis — can run during static phase)
+  if (cluster.testPlan.includes("sensory-instructions")) {
+    const r = await withTimeout(testSensoryInstructions(page, url, llmClient), 30_000);
+    if (r) issues.push(...r);
+  }
+
+  return { issues, promotedElements };
+}
+
+// ── Phase 2: Interaction (Tier 2, interactive tests, re-enable animations) ──
+
+async function runPhase2Interaction(
+  page: Page,
+  promotedElements: ElementManifest[],
+  url: string,
+  timer: TierTimer,
+  cluster: TemplateCluster,
+): Promise<{ issues: Issue[]; promotedToTier3: ElementManifest[] }> {
+  const issues: Issue[] = [];
+
+  // Tier 2: unified interaction pass
+  const { issues: tier2Issues, promotedToTier3 } = await runTier2(page, promotedElements, url, timer);
+  issues.push(...tier2Issues);
+
+  // Legacy interactive tests (minus keyboard-operability, now handled by Tier 2)
+  if (cluster.testPlan.includes("interactive")) {
+    const interactiveIssues = await runInteractiveTests(page, url);
+    issues.push(...interactiveIssues);
+  }
+
+  // Re-enable animations disabled by Tier 2 (for viewport tests and screenshots)
+  await enableAnimations(page);
+
+  return { issues, promotedToTier3 };
+}
+
+// ── Phase 3: Viewport (reflow, resize-text, text-spacing — viewport mutation) ──
+
+async function runPhase3Viewport(
+  page: Page,
+  url: string,
+  cluster: TemplateCluster,
+): Promise<Issue[]> {
+  const issues: Issue[] = [];
+
+  if (cluster.testPlan.includes("reflow")) {
+    issues.push(...await testReflow(page, url));
+  }
+  if (cluster.testPlan.includes("resize-text")) {
+    issues.push(...await testResizeText(page, url));
+  }
+  if (cluster.testPlan.includes("text-spacing")) {
+    issues.push(...await testTextSpacing(page, url));
+  }
+
+  return issues;
+}
+
+// ── Phase 4: Capture (color-use screenshots, status messages, Tier 3 queue) ──
+
+async function runPhase4Capture(
+  page: Page,
+  url: string,
+  cluster: TemplateCluster,
+  auditId: string,
+  llmClient: LLMClient | null,
+  promotedToTier3: ElementManifest[],
+): Promise<Issue[]> {
+  const issues: Issue[] = [];
+
+  // Defensive viewport reset after Phase 3 modifications
+  await page.setViewportSize({ width: 1280, height: 720 });
+
+  // Color-use CVD (screenshots written directly to disk)
+  if (cluster.testPlan.includes("color-use")) {
+    const screenshotDir = join(process.env.REPORTS_DIR || "./reports", auditId, "screenshots");
+    await Bun.write(join(screenshotDir, ".keep"), "");
+    const colorResult = await withTimeout(
+      testColorUse(page, url, llmClient, screenshotDir, cluster.id.slice(0, 8)),
+      45_000,
+    );
+    if (colorResult) issues.push(...colorResult.issues);
+  }
+
+  // Status messages (MutationObserver — runs best after viewport is restored)
+  if (cluster.testPlan.includes("status-messages")) {
+    const r = await withTimeout(testStatusMessages(page, url), 30_000);
+    if (r) issues.push(...r);
+  }
+
+  // Tier 3: queue async LLM vision jobs
+  if (promotedToTier3.length > 0 && llmClient) {
+    const tier3Elements = promotedToTier3.map(el => ({
+      selector: el.selector,
+      context: `${el.tag} element: ${el.accessibleName || el.selector}`,
+      promptType: "color-use-link",
+    }));
+    await insertTier3Job(auditId, cluster.id, tier3Elements, 2).catch(err => {
+      console.warn(`[probe] Failed to insert tier3 job: ${err}`);
+    });
+  }
+
+  return issues;
+}
+
+// ── Legacy probe (fallback for PROBE_V2=false) ──
+
+async function runProbeLegacy(
+  page: Page,
+  cluster: TemplateCluster,
+  url: string,
+  timer: TierTimer,
+  axeCache: Map<string, Issue[]> | undefined,
+  config: PipelineConfig,
+  llmClient: LLMClient | null,
+  auditId: string,
+  parentSpan: { setMeta: (m: Record<string, unknown>) => void },
+): Promise<Issue[]> {
+  const allIssues: Issue[] = [];
+
+  // Tier 0: manifest
+  timer.startTier("tier0");
+  const manifest = await collectManifest(page);
+  const styleGroups = groupByFingerprint(manifest);
+  timer.endTier("tier0", {
+    elementsDiscovered: manifest.length,
+    styleGroups: styleGroups.length,
+    representativeElements: styleGroups.length,
+  });
+
+  // axe-core full
+  if (cluster.testPlan.includes("axe-full")) {
+    let axeIssues: Issue[];
+    if (axeCache?.has(url)) {
+      axeIssues = axeCache.get(url)!;
+    } else {
+      axeIssues = await runAxeFull(page, url, config);
+    }
+    allIssues.push(...axeIssues);
+    parentSpan.setMeta({ axeViolations: axeIssues.length });
+  }
+
+  // Error identification
+  if (cluster.testPlan.includes("error-identification")) {
+    const errorIdIssues = await testErrorIdentification(page, url);
+    allIssues.push(...errorIdIssues);
+    parentSpan.setMeta({ errorIdViolations: errorIdIssues.length });
+  }
+
+  // evaluate tests (parallel)
+  const evaluateTests: Promise<Issue[]>[] = [];
+  if (cluster.testPlan.includes("target-size")) evaluateTests.push(testTargetSize(page, url));
+  if (cluster.testPlan.includes("multimedia")) evaluateTests.push(testMultimedia(page, url));
+  if (cluster.testPlan.includes("timed-events")) evaluateTests.push(testTimedEvents(page, url));
+  if (cluster.testPlan.includes("non-text-contrast")) evaluateTests.push(testNonTextContrast(page, url));
+  if (cluster.testPlan.includes("meaningful-sequence")) evaluateTests.push(testMeaningfulSequence(page, url));
+  if (cluster.testPlan.includes("semantic-structure")) evaluateTests.push(testSemanticStructure(page, url));
+  if (cluster.testPlan.includes("legal-a11y")) evaluateTests.push(testLegalA11y(page, url));
+  const evaluateResults = await Promise.all(evaluateTests);
+  allIssues.push(...evaluateResults.flat());
+
+  // Interactive tests (legacy)
+  if (cluster.testPlan.includes("interactive")) {
+    const interactiveIssues = await runInteractiveTests(page, url);
+    allIssues.push(...interactiveIssues);
+  }
+
+  // Tier 1: CSSOM
+  const { issues: tier1Issues, promotedElements } = await runTier1(page, styleGroups, url, timer);
+  allIssues.push(...tier1Issues);
+
+  // Tier 2: interaction
+  const { issues: tier2Issues, promotedToTier3 } = await runTier2(page, promotedElements, url, timer);
+  allIssues.push(...tier2Issues);
+
+  // Tier 3: queue
+  if (promotedToTier3.length > 0 && llmClient) {
+    const tier3Elements = promotedToTier3.map(el => ({
+      selector: el.selector,
+      context: `${el.tag} element: ${el.accessibleName || el.selector}`,
+      promptType: "color-use-link",
+    }));
+    await insertTier3Job(auditId, cluster.id, tier3Elements, 2).catch(err => {
+      console.warn(`[probe] Failed to insert tier3 job: ${err}`);
+    });
+  }
+
+  // Status messages
+  if (cluster.testPlan.includes("status-messages")) {
+    const r = await withTimeout(testStatusMessages(page, url), 30_000);
+    if (r) allIssues.push(...r);
+  }
+
+  // Viewport tests
+  if (cluster.testPlan.includes("reflow")) allIssues.push(...await testReflow(page, url));
+  if (cluster.testPlan.includes("resize-text")) allIssues.push(...await testResizeText(page, url));
+  if (cluster.testPlan.includes("text-spacing")) allIssues.push(...await testTextSpacing(page, url));
+
+  // CVD color analysis
+  if (cluster.testPlan.includes("color-use")) {
+    const screenshotDir = join(process.env.REPORTS_DIR || "./reports", auditId, "screenshots");
+    await Bun.write(join(screenshotDir, ".keep"), "");
+    const colorResult = await withTimeout(
+      testColorUse(page, url, llmClient, screenshotDir, cluster.id.slice(0, 8)),
+      45_000,
+    );
+    if (colorResult) allIssues.push(...colorResult.issues);
+  }
+
+  // Sensory instructions
+  if (cluster.testPlan.includes("sensory-instructions")) {
+    const r = await withTimeout(testSensoryInstructions(page, url, llmClient), 30_000);
+    if (r) allIssues.push(...r);
+  }
+
+  return allIssues;
+}
+
+// ── Shared axe-core full scan ──
+
 async function runAxeFull(page: Page, url: string, config: PipelineConfig): Promise<Issue[]> {
   const tags =
     config.wcagLevel === "AAA"
@@ -271,6 +477,7 @@ async function runAxeFull(page: Page, url: string, config: PipelineConfig): Prom
         : ["wcag2a", "wcag21a"];
 
   const results = await new AxeBuilder({ page })
+    .setLegacyMode(true)
     .withTags(tags)
     .options({ resultTypes: ["violations", "incomplete"] })
     .analyze();

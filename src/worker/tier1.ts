@@ -87,6 +87,25 @@ export async function runTier1(
 ): Promise<{ issues: Issue[]; promotedElements: ElementManifest[] }> {
   timer.startTier("tier1");
 
+  // Short-circuit: if no same-origin stylesheets are accessible, CSSOM analysis
+  // cannot resolve any elements. Promote all to Tier 2 immediately.
+  const hasAccessibleCSS = await page.evaluate(() => {
+    return Array.from(document.styleSheets).some(sheet => {
+      try { sheet.cssRules; return true; } catch { return false; }
+    });
+  });
+
+  if (!hasAccessibleCSS) {
+    const allElements = groups.map(g => g.representative);
+    timer.endTier("tier1", {
+      issuesFound: 0,
+      elementsPromotedToTier2: allElements.length,
+      skippedByFingerprint: 0,
+      shortCircuited: "cross-origin-css",
+    });
+    return { issues: [], promotedElements: allElements };
+  }
+
   const issues: Issue[] = [];
   const promotedElements: ElementManifest[] = [];
   let skippedByFingerprint = 0;

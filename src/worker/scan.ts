@@ -13,7 +13,6 @@ import { AuditTracer } from "./tracer";
 
 const MIN_INTERNAL_LINKS = 3;
 
-const AXE_LIGHT_RULES = ["image-alt", "link-name", "button-name", "label", "document-title"];
 
 interface ScanPhaseResult {
   scanResults: Map<string, ScanResult>;
@@ -44,7 +43,7 @@ export async function runScanPhase(
         const page = await context.newPage();
         try {
           // Navigate with error handling
-          let response;
+          let response: any = null;
           try {
             response = await page.goto(url, {
               waitUntil: "domcontentloaded",
@@ -83,6 +82,9 @@ export async function runScanPhase(
             span.end("error", `http-${status}`);
             return;
           }
+
+          // Release response reference — context accumulates metadata per Playwright #6319
+          response = null;
 
           // Check same-origin after redirect
           const finalUrl = page.url();
@@ -126,15 +128,16 @@ export async function runScanPhase(
             };
           };
 
-          // axe LIGHT — content-dependent rules only
-          let lightIssues: Issue[] = [];
+          // axe-core FULL — all WCAG AA rules (results cached for probe phase reuse)
+          let axeIssues: Issue[] = [];
           try {
             const axeResults = await new AxeBuilder({ page })
-              .withRules(AXE_LIGHT_RULES)
+              .setLegacyMode(true)
+              .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
               .options({ resultTypes: ["violations", "incomplete"] })
               .analyze();
 
-            lightIssues = axeResults.violations.flatMap((v) =>
+            axeIssues = axeResults.violations.flatMap((v) =>
               v.nodes.map((node) => ({
                 id: crypto.randomUUID(),
                 url: finalUrl,
@@ -150,7 +153,7 @@ export async function runScanPhase(
                 xpath: "",
                 viewportWidth: 1280,
                 pageTitle: domData.title,
-                checkSource: "scan-light" as const,
+                checkSource: "axe" as const,
                 suggestedFix: node.failureSummary ?? "",
                 fixConfidence: null,
                 llmConfidence: null,
@@ -196,14 +199,14 @@ export async function runScanPhase(
             fingerprint: domData.fingerprint,
             elementCount: domData.elementCount,
             capabilities: domData.capabilities,
-            issueCount: lightIssues.length,
+            issueCount: axeIssues.length,
           });
 
-          if (lightIssues.length > 0) {
+          if (axeIssues.length > 0) {
             await insertIssuesV4(
               auditId,
               pageId,
-              lightIssues.map((i) => ({
+              axeIssues.map((i) => ({
                 rule: i.rule,
                 impact: i.impact,
                 description: i.description,
@@ -226,7 +229,7 @@ export async function runScanPhase(
             links,
             elementCount: domData.elementCount,
             capabilities: domData.capabilities,
-            lightIssues,
+            axeIssues,
             pageId,
             discoveryMethod,
           };
@@ -235,7 +238,7 @@ export async function runScanPhase(
           allLinks.set(finalUrl, links);
 
           span.setMeta({
-            lightIssueCount: lightIssues.length,
+            axeIssueCount: axeIssues.length,
             elementCount: domData.elementCount,
             linkCount: links.length,
             discoveryMethod,
