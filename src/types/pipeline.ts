@@ -88,6 +88,7 @@ export interface PipelineConfig {
   maxProbeTemplates: number;
   navModel: string;
   rateLimitRpm: number;
+  additionalUrls?: string[];
 }
 
 export const DEFAULT_PIPELINE_CONFIG: Omit<PipelineConfig, "baseUrl"> = {
