@@ -371,7 +371,7 @@ export async function testColorUse(
     if (screenshotDir && templatePrefix) {
       const { join } = await import("node:path");
       for (const r of cvdResults) {
-        if (r.diffPercent <= 0.5) continue; // Skip saving evidence for negligible diffs
+        if (r.diffPercent <= 5) continue; // Only save evidence for significant diffs (>5%)
         const normalPath = join(screenshotDir, `${templatePrefix}-${r.deficiency}-normal.png`);
         const cvdPath = join(screenshotDir, `${templatePrefix}-${r.deficiency}-cvd.png`);
         await Bun.write(normalPath, r.normalPng);
