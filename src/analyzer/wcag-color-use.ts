@@ -237,16 +237,28 @@ export interface ColorUseResult {
   issues: Issue[];
   screenshots: Array<{
     deficiency: string;
-    normalPng: Buffer;
-    cvdPng: Buffer;
-    diffPercent: number;
+    normalPath: string;
+    cvdPath: string;
   }>;
 }
 
+/**
+ * WCAG 1.4.1 — Use of Color: 3-tier detection.
+ *
+ * Tier 1: DOM heuristics (links without underline, status indicators without text) — free
+ * Tier 2: CVD screenshot diff via CDP — free (but takes screenshots)
+ * Tier 3: LLM vision confirmation — only if diff > 0.5% — ~$0.003/page
+ *
+ * @param llmClient - Optional. If null, only Tier 1 + Tier 2 run.
+ * @param screenshotDir - If provided, screenshots are written directly to disk (eliminates ~50MB peak buffer memory).
+ * @param templatePrefix - Prefix for screenshot filenames (e.g. cluster id slice).
+ */
 export async function testColorUse(
   page: Page,
   url: string,
   llmClient: LLMClient | null = null,
+  screenshotDir?: string,
+  templatePrefix?: string,
 ): Promise<ColorUseResult> {
   const issues: Issue[] = [];
   const screenshots: ColorUseResult["screenshots"] = [];
@@ -264,14 +276,16 @@ export async function testColorUse(
       }
     }
 
-    // Collect screenshots for evidence
-    for (const r of cvdResults) {
-      screenshots.push({
-        deficiency: r.deficiency,
-        normalPng: r.normalPng,
-        cvdPng: r.cvdPng,
-        diffPercent: r.diffPercent,
-      });
+    // Write screenshots to disk (eliminates buffer memory overhead)
+    if (screenshotDir && templatePrefix) {
+      const { join } = await import("node:path");
+      for (const r of cvdResults) {
+        const normalPath = join(screenshotDir, `${templatePrefix}-${r.deficiency}-normal.png`);
+        const cvdPath = join(screenshotDir, `${templatePrefix}-${r.deficiency}-cvd.png`);
+        await Bun.write(normalPath, r.normalPng);
+        await Bun.write(cvdPath, r.cvdPng);
+        screenshots.push({ deficiency: r.deficiency, normalPath, cvdPath });
+      }
     }
 
     // Report high CVD diff as informational even without LLM

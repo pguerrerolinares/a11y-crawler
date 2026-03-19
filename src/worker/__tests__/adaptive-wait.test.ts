@@ -1,0 +1,10 @@
+import { test, expect } from "bun:test";
+import { adaptiveWait, disableAnimations } from "../adaptive-wait";
+
+test("adaptiveWait is a function", () => {
+  expect(typeof adaptiveWait).toBe("function");
+});
+
+test("disableAnimations is a function", () => {
+  expect(typeof disableAnimations).toBe("function");
+});

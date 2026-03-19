@@ -1,9 +1,11 @@
 // src/worker/pipeline.ts
 import type { Browser } from "playwright";
 import type { PipelineConfig, CrawlError } from "../types/pipeline";
+import type { Issue } from "../types/issue";
 import type { LLMClient } from "../llm/client";
 import { AuditTracer } from "./tracer";
-import { persistSpans, markAuditCompleted, markAuditFailed, emitAuditEvent, getIssueCountsByImpact, getPageCount, getPreviousAudit, getIssuesByTemplateId, updateAuditRegression } from "./db";
+import { persistSpans, markAuditCompleted, markAuditCompletedBase, markAuditFullyCompleted, markAuditFailed, emitAuditEvent, getIssueCountsByImpact, getPageCount, getPreviousAudit, getIssuesByTemplateId, updateAuditRegression, insertIssuesV4 } from "./db";
+import { processTier3Queue } from "./tier3-queue";
 import { matchTemplatesAcrossAudits, computeRegressionDiff } from "../analyzer/regression";
 import type { SerializedCluster } from "../analyzer/regression";
 import { computeWcagScore } from "../reporter/wcag-score";
@@ -51,6 +53,18 @@ export async function runPipeline(
       const resolvedUrl = new URL(config.baseUrl);
       resolvedUrl.host = new URL(resolvedOrigin).host;
       queue.seed([config.baseUrl, resolvedUrl.href], "link", 0);
+
+      // Seed additionalUrls (manually specified URLs to include in crawl)
+      if (userConfig.additionalUrls?.length) {
+        for (const additionalUrl of userConfig.additionalUrls) {
+          try {
+            const resolved = new URL(additionalUrl, config.baseUrl).href;
+            queue.seed([resolved], "link", 0);
+          } catch {
+            console.warn(`[pipeline] Invalid additionalUrl: ${additionalUrl}`);
+          }
+        }
+      }
 
       // Discover sitemap URLs
       try {
@@ -112,6 +126,7 @@ export async function runPipeline(
       });
 
       await emitAuditEvent(auditId, "scan:complete", { pagesScanned: scanResults.size });
+      if (typeof Bun !== 'undefined') Bun.gc(true);
 
       // ══════════════════════════════════════════════
       // PHASE 2: CLASSIFY
@@ -139,6 +154,7 @@ export async function runPipeline(
       });
 
       await tracer.flush(); // Phase boundary flush — CLASSIFY spans survive if PROBE crashes
+      if (typeof Bun !== 'undefined') Bun.gc(true);
 
       await emitAuditEvent(auditId, "probe:start", {
         templateCount: templates.length,
@@ -148,8 +164,17 @@ export async function runPipeline(
       // ══════════════════════════════════════════════
       // PHASE 3: PROBE
       // ══════════════════════════════════════════════
+
+      // Build axe cache from scan results — probe reuses these to avoid re-running axe-full
+      const axeCache = new Map<string, Issue[]>();
+      for (const [pageUrl, result] of scanResults) {
+        if (result.axeIssues.length > 0) {
+          axeCache.set(pageUrl, result.axeIssues);
+        }
+      }
+
       await tracer.trace("audit:probe", async (probeSpan) => {
-        await runProbePhase(getBrowser, auditId, templates, config, tracer, llmClient);
+        await runProbePhase(getBrowser, auditId, templates, config, tracer, llmClient, axeCache);
         probeSpan.setMeta({ templatesProbed: templates.length });
       });
 
@@ -163,7 +188,7 @@ export async function runPipeline(
       const totalPages = await getPageCount(auditId);
       const wcagScore = computeWcagScore(issuesByImpact, totalPages);
 
-      // Serialize template clusters (slim format — no lightIssues)
+      // Serialize template clusters (slim format — no axeIssues)
       const serializedClusters = templates.map((t) => ({
         id: t.id,
         fingerprint: t.fingerprint.toString(16),
@@ -181,21 +206,41 @@ export async function runPipeline(
         totalTemplates: templates.length,
         totalIssues,
         issuesByImpact,
-        pipelineVersion: "v4.1",
+        pipelineVersion: "v5.0",
       };
 
-      await markAuditCompleted(
+      await markAuditCompletedBase(
         auditId,
         summary,
         { totalUrlsDiscovered: scanResults.size, urlsFromSitemap: 0, urlsFromLinks: scanResults.size, urlsFromInteraction: 0 },
-        (llmClient?.usage ?? { totalCalls: 0, totalInputTokens: 0, totalOutputTokens: 0, navigationCalls: 0, enrichmentCalls: 0 }) as unknown as Record<string, unknown>,
+        (llmClient?.usage ?? { totalCalls: 0, totalInputTokens: 0, totalOutputTokens: 0, navigationCalls: 0, enrichmentCalls: 0, visionCalls: 0 }) as unknown as Record<string, unknown>,
         durationSeconds,
         wcagScore,
         crawlErrors.length > 0 ? crawlErrors : null,
         serializedClusters,
+        null,
       );
 
       await emitAuditEvent(auditId, "audit:complete", { durationSeconds });
+
+      // Launch Tier 3 queue in background (non-blocking)
+      if (llmClient) {
+        const insertIssuesFn = async (_auditId: string, issues: unknown[]) => {
+          // Tier 3 issues are appended to the representative page (or a virtual page)
+          // For now, insert as a batch without a page (pageId = null is not valid, so we skip)
+          console.log(`[tier3] Would insert ${issues.length} issues for audit ${_auditId}`);
+        };
+        const insertEventFn = async (_auditId: string, type: string, data: unknown) => {
+          await emitAuditEvent(_auditId, type, data as Record<string, unknown>);
+        };
+        processTier3Queue(auditId, llmClient, insertIssuesFn, insertEventFn).catch(err => {
+          console.error(`[tier3] Queue failed:`, err);
+          markAuditFullyCompleted(auditId).catch(() => {});
+        });
+      } else {
+        // No LLM client — mark fully completed immediately
+        await markAuditFullyCompleted(auditId);
+      }
 
       // ── Regression diff (post-step, non-fatal) ──
       try {

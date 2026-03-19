@@ -11,7 +11,14 @@ const MAX_RETRIES = 5;
 async function launchBrowser(): Promise<Browser> {
   if (!BROWSERLESS_URL) {
     // Local dev: launch Chromium directly
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+      headless: true,
+      args: [
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+      ],
+    });
     console.log("Launched local Chromium");
     return browser;
   }

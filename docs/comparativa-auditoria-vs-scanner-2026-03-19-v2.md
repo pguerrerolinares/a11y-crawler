@@ -200,3 +200,15 @@ Todos documentados en backlog (MEDIUM-11, 12, 13) + 1 bug crítico (HIGH-1).
 
 ### Dato calidad: 66.6% de issues sin WCAG criterion
 1,657 de 2,487 issues no tienen `wcagCriterion` mapeado. Priorizado como backlog MEDIUM-9 (elevado a HIGH). Afecta al valor del reporte para el usuario final.
+
+---
+
+## V5 Update (2026-03-19)
+
+Pipeline v5.0 desplegado con sistema de Intelligent Probe por tiers:
+- **33 páginas en 261s (4.35 min)** vs 1,734s (29 min) en v4.5 — **85% más rápido**
+- **2,815 issues** vs 2,487 — **+13% más detección**
+- **33 reglas** vs 31 — **+2 reglas nuevas**
+- **Coste LLM idéntico** (~$0.50) — optimizaciones Tier 3 (crop, batch, cache) aún no activadas
+- Performance endpoint: `GET /api/audits/:id/performance` con desglose completo por tier
+- Tier 2 unified interaction pass: 702 interacciones en 52s (vs ~640s antes del fix)

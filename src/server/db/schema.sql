@@ -124,3 +124,33 @@ CREATE INDEX IF NOT EXISTS idx_spans_metadata ON audit_spans USING GIN(metadata)
 -- ALTER TABLE audits ADD COLUMN IF NOT EXISTS wcag_score INT;
 -- ALTER TABLE audits ADD COLUMN IF NOT EXISTS duration_seconds INT;
 -- ALTER TABLE audits ADD COLUMN IF NOT EXISTS crawl_errors JSONB;
+
+-- Tier 3 async job queue
+CREATE TABLE IF NOT EXISTS tier3_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  audit_id UUID NOT NULL REFERENCES audits(id) ON DELETE CASCADE,
+  template_id TEXT NOT NULL,
+  elements JSONB NOT NULL,
+  priority INT NOT NULL DEFAULT 2,
+  status TEXT NOT NULL DEFAULT 'pending',
+  result JSONB,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_tier3_jobs_audit ON tier3_jobs(audit_id);
+CREATE INDEX IF NOT EXISTS idx_tier3_jobs_pending ON tier3_jobs(status, priority) WHERE status = 'pending';
+
+-- Tier 3 LLM result cache
+CREATE TABLE IF NOT EXISTS tier3_cache (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cache_key TEXT NOT NULL UNIQUE,
+  result JSONB NOT NULL,
+  cache_type TEXT NOT NULL DEFAULT 'text',
+  audit_id UUID REFERENCES audits(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tier3_cache_key ON tier3_cache(cache_key);
