@@ -52,6 +52,12 @@ async function listIssues(filterCol: "audit_id" | "page_id", filterVal: string, 
     values.push(source);
     paramIdx++;
   }
+  const page = params.page;
+  if (page) {
+    conditions.push(`i.page_id = $${paramIdx}`);
+    values.push(page);
+    paramIdx++;
+  }
 
   const where = conditions.join(" AND ");
   const issues = await db.unsafe(
