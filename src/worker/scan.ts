@@ -143,7 +143,7 @@ export async function runScanPhase(
                 url: finalUrl,
                 rule: v.id,
                 impact: (v.impact ?? "minor") as Issue["impact"],
-                description: v.description,
+                description: node.failureSummary ? `${v.description}. ${node.failureSummary}` : v.description,
                 help: v.help,
                 helpUrl: v.helpUrl,
                 wcagTags: v.tags,

@@ -21,6 +21,7 @@ export interface LLMUsageTracker {
   navigationCalls: number;
   enrichmentCalls: number;
   visionCalls: number;
+  estimatedImageTokens: number;
 }
 
 export class LLMClient {
@@ -38,6 +39,7 @@ export class LLMClient {
     navigationCalls: 0,
     enrichmentCalls: 0,
     visionCalls: 0,
+    estimatedImageTokens: 0,
   };
 
   constructor(config: LLMConfig) {
@@ -121,6 +123,13 @@ export class LLMClient {
         this.usage.totalInputTokens += result.inputTokens;
         this.usage.totalOutputTokens += result.outputTokens;
         this.usage.enrichmentCalls++;
+        this.usage.visionCalls++;
+        // Estimate ~1000 tokens per image (base64 PNG at 800px)
+        const imageCount = messages.filter(m => {
+          if (m.role !== "user" || typeof m.content === "string") return false;
+          return Array.isArray(m.content) && (m.content as Array<{type: string}>).some(p => p.type === "image_url");
+        }).length;
+        this.usage.estimatedImageTokens += imageCount * 1000;
 
         return result;
       } catch {
@@ -163,6 +172,12 @@ export class LLMClient {
         this.usage.totalInputTokens += result.inputTokens;
         this.usage.totalOutputTokens += result.outputTokens;
         this.usage.visionCalls++;
+        // Estimate ~1000 tokens per image
+        for (const m of messages) {
+          if (m.role === "user" && Array.isArray(m.content)) {
+            this.usage.estimatedImageTokens += (m.content as Array<{type: string}>).filter(p => p.type === "image_url").length * 1000;
+          }
+        }
 
         return result;
       } catch (err: unknown) {

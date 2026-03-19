@@ -18,10 +18,8 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 ### ~~MEDIUM-4: Sensory instructions LLM response sin type guard~~ ✅ CERRADO (v7)
 - **Fix:** Type guard completo: valida `typeof`, `Array.isArray(violations)`, y cada violation con `index`/`confidence`/`reason`.
 
-### MEDIUM-5: `require("pixelmatch")` en contexto ESM es frágil
-- **Archivo:** `src/analyzer/wcag-color-use.ts:39`
-- **Issue:** `require()` en módulo ESM/TS. Funciona en Bun pero es hazard de mantenimiento.
-- **Fix:** Usar `await import("pixelmatch")` (requiere hacer `computePixelDiffPercent` async).
+### ~~MEDIUM-5: `require("pixelmatch")` en contexto ESM es frágil~~ ✅ CERRADO (v7)
+- **Fix:** `computePixelDiffPercent` ahora es async con `await import("pixelmatch")`.
 
 ### ~~MEDIUM-6: Pseudo-heading detection genera falsos positivos en fuentes base 18px+~~ ✅ CERRADO (v7)
 - **Fix:** Compara contra `parentFontSize * 1.3` (y >= 16px). Sitios con base 18-20px ya no generan FP.
@@ -38,19 +36,15 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 - **Issue:** Reglas como `region` (27 issues) y `landmark-one-main` (1) de axe-core quedan con `wcagCriterion: null`. No se distingue entre "sin mapeo WCAG" y "es best-practice". Afecta al reporting: 28/50 issues (56%) sin criterio WCAG asignado en auditoría de example-client.com.
 - **Fix:** Mapear `region` → 1.3.1, `landmark-one-main` → best-practice. Crear lookup table de axe rules → WCAG criterion, o extraerlo de `axe.result.tags` (axe incluye tags como `wcag2a`, `wcag131`, `best-practice`).
 
-### MEDIUM-10: Axe issues pierden `message` en pipeline
-- **Archivo:** Pipeline de axe-core → DB
-- **Issue:** Issues de `scan-light` (axe) llegan con `message: null`. Axe provee `help` y `description` por regla + `message` por nodo. Se pierde información útil para el usuario final.
-- **Fix:** Persistir `node.failureSummary` o `rule.help` como `message` del issue.
+### ~~MEDIUM-10: Axe issues pierden `message` en pipeline~~ ✅ CERRADO (v7)
+- **Fix:** `description` ahora incluye `node.failureSummary` cuando disponible (`v.description + ". " + failureSummary`). Aplicado en scan.ts y probe.ts.
 
 ---
 
 ## MEDIUM — Observability
 
-### MEDIUM-8: LLM usage tracker no distingue llamadas de visión vs texto
-- **Archivo:** `src/llm/client.ts:17-23,118-121`
-- **Issue:** `LLMUsageTracker` agrupa `chatVision()` y `chat()` bajo el mismo `enrichmentCalls`. No hay forma de saber cuántas llamadas fueron de visión ni estimar costes reales. Además, `prompt_tokens` de Moonshot puede no incluir tokens de imagen (base64), subestimando el coste real (estimado $0.15-0.25 vs $0.03-0.05 reportado para 33 páginas).
-- **Fix:** Añadir `visionCalls: number` y `estimatedImageTokens: number` al tracker. En `chatVision()`, contar imágenes enviadas y estimar tokens de imagen (~1k tokens/imagen). Persistir en DB para reporting preciso.
+### ~~MEDIUM-8: LLM usage tracker no distingue llamadas de visión vs texto~~ ✅ CERRADO (v7)
+- **Fix:** `chatVision()` ahora incrementa `visionCalls` y estima `estimatedImageTokens` (~1000/imagen). `chatVisionBatch()` también cuenta imágenes por mensaje.
 
 ---
 

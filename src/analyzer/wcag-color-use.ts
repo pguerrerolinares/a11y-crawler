@@ -29,14 +29,14 @@ function makeColorIssue(
  * Pixel diff percentage between two raw RGBA buffers.
  * Exported for testing.
  */
-export function computePixelDiffPercent(
+export async function computePixelDiffPercent(
   buf1: Uint8Array | Buffer,
   buf2: Uint8Array | Buffer,
   width: number,
   height: number,
-): number {
-  // pixelmatch is ESM — require() returns the module object, default is the function
-  const pixelmatch = require("pixelmatch").default ?? require("pixelmatch");
+): Promise<number> {
+  const mod = await import("pixelmatch");
+  const pixelmatch = mod.default ?? mod;
   const totalPixels = width * height;
   const diff = new Uint8Array(totalPixels * 4);
   const diffPixels = pixelmatch(
@@ -153,7 +153,7 @@ async function tier2CvdScreenshotDiff(page: Page): Promise<CvdDiffResult[]> {
         const { data: cvdRaw } = await sharp(cvdShot)
           .ensureAlpha().resize(DIFF_WIDTH, DIFF_HEIGHT).raw().toBuffer({ resolveWithObject: true });
 
-        const diffPercent = computePixelDiffPercent(normalRaw, cvdRaw, DIFF_WIDTH, DIFF_HEIGHT);
+        const diffPercent = await computePixelDiffPercent(normalRaw, cvdRaw, DIFF_WIDTH, DIFF_HEIGHT);
         results.push({ deficiency, diffPercent, normalPng: normalShot, cvdPng: cvdShot });
       } catch (err) {
         // CDP not available (e.g. Firefox) — skip
