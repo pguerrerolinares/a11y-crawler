@@ -39,7 +39,9 @@ export type TestType =
   | "semantic-structure"
   // v4.4 — LLM-augmented WCAG tests
   | "color-use"
-  | "sensory-instructions";
+  | "sensory-instructions"
+  // v4.5 — legal/structural checks
+  | "legal-a11y";
 
 export interface TemplateCluster {
   id: string;
