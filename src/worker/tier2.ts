@@ -199,8 +199,46 @@ async function captureAriaStates(page: Page, selector: string): Promise<Record<s
   }, selector);
 }
 
-async function detectPopup(page: Page, trigger: ElementManifest): Promise<PopupInfo | null> {
+/**
+ * Snapshot visibility state of popup candidates BEFORE hover.
+ * Returns a serializable map of candidate index → visible boolean.
+ * Must be called BEFORE the hover interaction on the trigger element.
+ */
+async function snapshotPopupCandidates(page: Page, triggerSelector: string): Promise<boolean[]> {
   return await page.evaluate((sel) => {
+    const triggerEl = document.querySelector(sel);
+    if (!triggerEl) return [];
+
+    const candidates = [
+      ...Array.from(triggerEl.children),
+      triggerEl.nextElementSibling,
+      triggerEl.parentElement?.querySelector('[role="tooltip"]'),
+      triggerEl.parentElement?.querySelector('[class$="-tooltip"]'),
+      triggerEl.parentElement?.querySelector('[class$="-popup"]'),
+      triggerEl.parentElement?.querySelector('[class$="-popover"]'),
+    ].filter(Boolean) as Element[];
+
+    return candidates.map(el => {
+      const style = getComputedStyle(el);
+      return style.opacity !== "0" &&
+        style.visibility !== "hidden" &&
+        style.display !== "none" &&
+        el.getBoundingClientRect().height > 0;
+    });
+  }, triggerSelector);
+}
+
+/**
+ * Detect popup by comparing before/after visibility of candidates.
+ * Only returns a popup if a candidate changed from invisible → visible after hover.
+ * This avoids false positives from always-visible children (e.g. <a><span>text</span></a>).
+ */
+async function detectPopup(
+  page: Page,
+  trigger: ElementManifest,
+  beforeSnapshot: boolean[],
+): Promise<PopupInfo | null> {
+  return await page.evaluate(({ sel, before }) => {
     const triggerEl = document.querySelector(sel);
     if (!triggerEl) return null;
 
@@ -213,12 +251,17 @@ async function detectPopup(page: Page, trigger: ElementManifest): Promise<PopupI
       triggerEl.parentElement?.querySelector('[class$="-popover"]'),
     ].filter(Boolean) as Element[];
 
-    for (const el of candidates) {
+    for (let i = 0; i < candidates.length; i++) {
+      const el = candidates[i];
       const style = getComputedStyle(el);
-      if (style.opacity !== "0" &&
+      const nowVisible = style.opacity !== "0" &&
         style.visibility !== "hidden" &&
         style.display !== "none" &&
-        el.getBoundingClientRect().height > 0) {
+        el.getBoundingClientRect().height > 0;
+
+      // Only flag as popup if it was invisible before and is visible now
+      const wasVisible = before[i] ?? false;
+      if (nowVisible && !wasVisible) {
         const id = (el as HTMLElement).id ? `#${CSS.escape((el as HTMLElement).id)}` : null;
         const cls = el.className && typeof el.className === "string"
           ? "." + el.className.split(" ").filter(Boolean).map(c => CSS.escape(c)).join(".")
@@ -233,7 +276,7 @@ async function detectPopup(page: Page, trigger: ElementManifest): Promise<PopupI
       }
     }
     return null;
-  }, trigger.selector);
+  }, { sel: trigger.selector, before: beforeSnapshot });
 }
 
 export async function runTier2(
@@ -258,10 +301,12 @@ export async function runTier2(
     try {
       // 1. HOVER — use dispatchEvent to bypass Playwright auto-wait (no actionability checks needed,
       // we only read computed styles). dispatchEvent('mouseover') triggers CSS :hover rules instantly.
+      // Snapshot popup candidates BEFORE hover to detect visibility changes (not false positives).
+      const popupBefore = await snapshotPopupCandidates(page, element.selector);
       await handle.dispatchEvent("mouseover");
       await adaptiveWait(page, element.selector, "hover", 50);
       result.hoverStyles = await captureStyles(page, element.selector);
-      result.hoverPopup = await detectPopup(page, element);
+      result.hoverPopup = await detectPopup(page, element, popupBefore);
 
       // WCAG 1.4.13 sub-tests: persistence, hoverability, dismissibility
       // These use page.mouse.move() (real pointer movement) because we need to test
@@ -322,13 +367,14 @@ export async function runTier2(
       timer.recordInteraction("hovers");
 
       // 2. FOCUS — use evaluate to bypass Playwright auto-wait. We only need :focus CSS to activate.
+      const focusPopupBefore = await snapshotPopupCandidates(page, element.selector);
       await page.evaluate((sel) => {
         const el = document.querySelector(sel) as HTMLElement;
         el?.focus();
       }, element.selector);
       await adaptiveWait(page, element.selector, "focus", 50);
       result.focusStyles = await captureStyles(page, element.selector);
-      result.focusPopup = await detectPopup(page, element);
+      result.focusPopup = await detectPopup(page, element, focusPopupBefore);
       await page.evaluate((sel) => { (document.querySelector(sel) as HTMLElement)?.blur(); }, element.selector);
       timer.recordInteraction("focuses");
 
