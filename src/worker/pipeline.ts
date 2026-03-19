@@ -1,6 +1,7 @@
 // src/worker/pipeline.ts
 import type { Browser } from "playwright";
 import type { PipelineConfig, CrawlError } from "../types/pipeline";
+import type { Issue } from "../types/issue";
 import type { LLMClient } from "../llm/client";
 import { AuditTracer } from "./tracer";
 import { persistSpans, markAuditCompleted, markAuditCompletedBase, markAuditFullyCompleted, markAuditFailed, emitAuditEvent, getIssueCountsByImpact, getPageCount, getPreviousAudit, getIssuesByTemplateId, updateAuditRegression, insertIssuesV4 } from "./db";
@@ -125,6 +126,7 @@ export async function runPipeline(
       });
 
       await emitAuditEvent(auditId, "scan:complete", { pagesScanned: scanResults.size });
+      if (typeof Bun !== 'undefined') Bun.gc(true);
 
       // ══════════════════════════════════════════════
       // PHASE 2: CLASSIFY
@@ -152,6 +154,7 @@ export async function runPipeline(
       });
 
       await tracer.flush(); // Phase boundary flush — CLASSIFY spans survive if PROBE crashes
+      if (typeof Bun !== 'undefined') Bun.gc(true);
 
       await emitAuditEvent(auditId, "probe:start", {
         templateCount: templates.length,
@@ -161,8 +164,17 @@ export async function runPipeline(
       // ══════════════════════════════════════════════
       // PHASE 3: PROBE
       // ══════════════════════════════════════════════
+
+      // Build axe cache from scan results — probe reuses these to avoid re-running axe-full
+      const axeCache = new Map<string, Issue[]>();
+      for (const [pageUrl, result] of scanResults) {
+        if (result.axeIssues.length > 0) {
+          axeCache.set(pageUrl, result.axeIssues);
+        }
+      }
+
       await tracer.trace("audit:probe", async (probeSpan) => {
-        await runProbePhase(getBrowser, auditId, templates, config, tracer, llmClient);
+        await runProbePhase(getBrowser, auditId, templates, config, tracer, llmClient, axeCache);
         probeSpan.setMeta({ templatesProbed: templates.length });
       });
 

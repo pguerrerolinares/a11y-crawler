@@ -22,7 +22,7 @@ test("ScanResult can be constructed with all fields", () => {
       hasDataTables: true,
       isSpaShell: false,
     },
-    lightIssues: [],
+    axeIssues: [],
     pageId: "page-001",
     discoveryMethod: "standard",
   };
@@ -34,7 +34,7 @@ test("ScanResult can be constructed with all fields", () => {
   expect(result.elementCount).toBe(42);
   expect(result.capabilities.hasForms).toBe(true);
   expect(result.capabilities.hasDataTables).toBe(true);
-  expect(result.lightIssues).toHaveLength(0);
+  expect(result.axeIssues).toHaveLength(0);
   expect(result.pageId).toBe("page-001");
   expect(result.discoveryMethod).toBe("standard");
 });
@@ -53,7 +53,7 @@ test("TemplateCluster can be constructed with bigint fingerprint", () => {
       hasDataTables: false,
       isSpaShell: false,
     },
-    lightIssues: [],
+    axeIssues: [],
     testPlan: ["axe-full", "interactive"],
   };
 
@@ -122,7 +122,7 @@ test("DEFAULT_PIPELINE_CONFIG has expected defaults", () => {
   expect(DEFAULT_PIPELINE_CONFIG.wcagLevel).toBe("AA");
   expect(DEFAULT_PIPELINE_CONFIG.pageTimeout).toBe(15_000);
   expect(DEFAULT_PIPELINE_CONFIG.concurrency).toBe(3);
-  expect(DEFAULT_PIPELINE_CONFIG.pagesPerContext).toBe(25);
+  expect(DEFAULT_PIPELINE_CONFIG.pagesPerContext).toBe(5);
   expect(DEFAULT_PIPELINE_CONFIG.probePagesPerContext).toBe(5);
   expect(DEFAULT_PIPELINE_CONFIG.maxProbeTemplates).toBe(25);
   expect(DEFAULT_PIPELINE_CONFIG.navModel).toBe("kimi-k2-turbo-preview");

@@ -13,7 +13,7 @@ export function clusterPages(scanResults: ScanResult[]): TemplateCluster[] {
     );
     if (match) {
       match.urls.push(result.url);
-      match.lightIssues.push(...result.lightIssues);
+      match.axeIssues.push(...result.axeIssues);
       for (const key of Object.keys(result.capabilities) as Array<keyof typeof result.capabilities>) {
         if (result.capabilities[key]) {
           (match.capabilities as Record<string, boolean>)[key] = true;
@@ -27,7 +27,7 @@ export function clusterPages(scanResults: ScanResult[]): TemplateCluster[] {
         urls: [result.url],
         representative: result.url,
         capabilities: { ...result.capabilities },
-        lightIssues: [...result.lightIssues],
+        axeIssues: [...result.axeIssues],
         testPlan: [],
       });
     }
@@ -68,7 +68,7 @@ export function selectRepresentative(
         (page.capabilities.hasMedia ? 3 : 0) +
         (page.capabilities.hasCarousel ? 2 : 0) +
         (page.capabilities.hasDataTables ? 1 : 0) +
-        (page.lightIssues.length > 0 ? 1 : 0);
+        (page.axeIssues.length > 0 ? 1 : 0);
       return score > best.score ? { url, score } : best;
     },
     { url: cluster.urls[0], score: -1 },
