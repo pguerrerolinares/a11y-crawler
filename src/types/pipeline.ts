@@ -41,7 +41,8 @@ export type TestType =
   | "color-use"
   | "sensory-instructions"
   // v4.5 — legal/structural checks
-  | "legal-a11y";
+  | "legal-a11y"
+  | "state-change-contrast";
 
 export interface TemplateCluster {
   id: string;
