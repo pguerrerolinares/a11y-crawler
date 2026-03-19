@@ -1,17 +1,24 @@
 import { join, resolve } from "node:path";
 
 const reportsDir = process.env.REPORTS_DIR || "./reports";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function handleScreenshots(req: Request, url: URL): Promise<Response> {
   if (req.method !== "GET") return Response.json({ error: "Method Not Allowed" }, { status: 405 });
 
   // /api/audits/:auditId/screenshots/:filename
   const fileMatch = url.pathname.match(/^\/api\/audits\/([^/]+)\/screenshots\/([^/]+)$/);
-  if (fileMatch) return serveScreenshot(fileMatch[1], fileMatch[2]);
+  if (fileMatch) {
+    if (!UUID_RE.test(fileMatch[1])) return Response.json({ error: "Invalid audit ID" }, { status: 400 });
+    return serveScreenshot(fileMatch[1], fileMatch[2]);
+  }
 
   // /api/audits/:auditId/screenshots
   const listMatch = url.pathname.match(/^\/api\/audits\/([^/]+)\/screenshots$/);
-  if (listMatch) return listScreenshots(listMatch[1]);
+  if (listMatch) {
+    if (!UUID_RE.test(listMatch[1])) return Response.json({ error: "Invalid audit ID" }, { status: 400 });
+    return listScreenshots(listMatch[1]);
+  }
 
   return Response.json({ error: "Not Found" }, { status: 404 });
 }
@@ -47,7 +54,8 @@ async function listScreenshots(auditId: string): Promise<Response> {
       files.push(file);
     }
     return Response.json({ screenshots: files });
-  } catch {
+  } catch (err) {
+    console.error("listScreenshots error for audit", auditId, err);
     return Response.json({ screenshots: [] });
   }
 }
