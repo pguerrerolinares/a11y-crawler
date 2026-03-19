@@ -128,7 +128,7 @@ export async function runProbePhase(
             );
             allIssues.push(...phase4Issues);
             phaseTimings.phase4CaptureMs = Date.now() - p4Start;
-            phaseTimings.totalTemplateMs = Date.now() - navStart;
+            phaseTimings.totalTemplateMs = Date.now() - gotoStart;
 
             parentSpan.setMeta({ phaseTimings });
           } else {
