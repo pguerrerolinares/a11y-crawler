@@ -55,7 +55,14 @@ Bun.serve({
             const response = await handleApiRoute(req, url);
             // Only cache successful responses
             if (response.status === 200) {
-              const cachedResponse = await setCached(cacheKey, response, ttl);
+              // Use shorter TTL for completed-base audits (Tier 3 may still add issues)
+              let effectiveTtl = ttl;
+              const responseCloneForCheck = response.clone();
+              try {
+                const body = await responseCloneForCheck.json() as Record<string, unknown>;
+                if (body?.status === "completed-base") effectiveTtl = 30_000;
+              } catch { /* not JSON or no status field */ }
+              const cachedResponse = await setCached(cacheKey, response, effectiveTtl);
               logRequest(reqClone, cachedResponse.clone(), Date.now() - start);
               return cachedResponse;
             }
