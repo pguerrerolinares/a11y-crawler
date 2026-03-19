@@ -79,12 +79,16 @@ export async function runProbePhase(
         const timer = new TierTimer(auditId, cluster.id, url);
 
         try {
+          const gotoStart = Date.now();
           await page.goto(url, { waitUntil: "load", timeout: 60_000 });
           await injectConsentPrehideCSS(page);
+          const navigationMs = Date.now() - gotoStart;
 
           const allIssues: Issue[] = [];
 
           if (USE_PHASED_PROBE) {
+            const phaseTimings: Record<string, number> = { navigationMs };
+
             // ── Tier 0: Element Interaction Manifest (shared across Phase 1 and 2) ──
             timer.startTier("tier0");
             const manifest = await collectManifest(page);
@@ -96,26 +100,37 @@ export async function runProbePhase(
             });
 
             // ── Phase 1: Static — Tier 1, axe, evaluate tests (no DOM mutation) ──
+            const p1Start = Date.now();
             const { issues: phase1Issues, promotedElements } = await runPhase1Static(
               page, cluster, url, timer, styleGroups, axeCache, config, llmClient, parentSpan,
             );
             allIssues.push(...phase1Issues);
+            phaseTimings.phase1StaticMs = Date.now() - p1Start;
 
             // ── Phase 2: Interaction — Tier 2, interactive tests, re-enable animations ──
+            const p2Start = Date.now();
             const { issues: phase2Issues, promotedToTier3 } = await runPhase2Interaction(
               page, promotedElements, url, timer, cluster,
             );
             allIssues.push(...phase2Issues);
+            phaseTimings.phase2InteractionMs = Date.now() - p2Start;
 
             // ── Phase 3: Viewport — reflow, resize-text, text-spacing ──
+            const p3Start = Date.now();
             const phase3Issues = await runPhase3Viewport(page, url, cluster);
             allIssues.push(...phase3Issues);
+            phaseTimings.phase3ViewportMs = Date.now() - p3Start;
 
             // ── Phase 4: Capture — color-use screenshots, status messages, Tier 3 queue ──
+            const p4Start = Date.now();
             const phase4Issues = await runPhase4Capture(
               page, url, cluster, auditId, llmClient, promotedToTier3,
             );
             allIssues.push(...phase4Issues);
+            phaseTimings.phase4CaptureMs = Date.now() - p4Start;
+            phaseTimings.totalTemplateMs = Date.now() - navStart;
+
+            parentSpan.setMeta({ phaseTimings });
           } else {
             // Legacy probe (single-pass for debugging/rollback)
             const result = await runProbeLegacy(
