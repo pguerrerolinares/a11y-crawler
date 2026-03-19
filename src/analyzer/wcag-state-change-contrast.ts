@@ -2,28 +2,19 @@
 import type { Page } from "playwright";
 import type { Issue } from "../types/issue";
 import { parseRgba, alphaBlend, relativeLuminance, contrastRatio } from "./contrast";
-import { CONSENT_BANNER_SELECTOR } from "./utils";
+import { makeWcagIssue, CONSENT_BANNER_SELECTOR } from "./utils";
 
 const MIN_STATE_RATIO = 3.0;
 const MAX_ELEMENTS = 20; // limit to keep probe fast
 
-function makeStateIssue(
-  url: string, description: string, selector: string,
-): Issue {
+const HELP_TEXT =
+  "Visual state changes (hover, focus, active) must have ≥ 3:1 contrast difference so users can perceive the change.";
+
+function makeStateIssue(url: string, description: string, selector: string): Issue {
   return {
-    id: crypto.randomUUID(), url,
-    rule: "state-change-low-contrast",
-    impact: "moderate",
-    description,
-    help: "Visual state changes (hover, focus, active) must have ≥ 3:1 contrast difference so users can perceive the change.",
-    helpUrl: "https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast",
-    wcagTags: ["wcag1411"],
-    selector, html: "", surroundingHtml: "", xpath: "",
-    viewportWidth: 1280, pageTitle: "",
+    ...makeWcagIssue(url, "state-change-low-contrast", "moderate", description, selector, "1.4.11", "visual"),
     checkSource: "interactive",
-    suggestedFix: null, fixConfidence: null,
-    llmConfidence: null, wcagCriterion: "1.4.11",
-    violationCategory: "visual",
+    help: HELP_TEXT,
   };
 }
 
@@ -88,7 +79,9 @@ export async function testStateChangeContrast(page: Page, url: string): Promise<
     '[role="link"]',
   ].join(", ");
 
-  // Step 1: Gather default-state colors for interactive elements
+  // Step 1: Gather default-state colors for interactive elements.
+  // Selectors are built inside the browser context with CSS.escape() to handle
+  // IDs and class names containing special CSS characters.
   let elements: ElementStateColors[];
   try {
     elements = await page.evaluate((args: { selector: string; consentSelector: string; max: number }) => {
@@ -102,19 +95,21 @@ export async function testStateChangeContrast(page: Page, url: string): Promise<
         return "rgb(255, 255, 255)";
       }
 
+      // Build a CSS selector using CSS.escape() to handle special characters in IDs/classes.
       function cssSelector(el: Element): string {
-        if (el.id) return `#${el.id}`;
+        if (el.id) return `#${CSS.escape(el.id)}`;
+        const tag = el.tagName.toLowerCase();
         if (el.className && typeof el.className === "string") {
-          const classes = el.className.trim().split(/\s+/).slice(0, 3).join(".");
-          if (classes) return `${el.tagName.toLowerCase()}.${classes}`;
+          const classes = el.className.trim().split(/\s+/).slice(0, 3).map((c) => CSS.escape(c)).join(".");
+          if (classes) return `${tag}.${classes}`;
         }
-        return el.tagName.toLowerCase();
+        return tag;
       }
 
       const results: any[] = [];
       const seen = new Set<string>();
 
-      for (const el of document.querySelectorAll(args.selector)) {
+      for (const el of Array.from(document.querySelectorAll(args.selector))) {
         if (results.length >= args.max) break;
 
         // Skip consent banners
@@ -127,7 +122,7 @@ export async function testStateChangeContrast(page: Page, url: string): Promise<
         const style = getComputedStyle(el);
         if (style.display === "none" || style.visibility === "hidden") continue;
 
-        // Skip duplicates (same selector = same component)
+        // Skip duplicates (same selector = same component type)
         const sel = cssSelector(el);
         if (seen.has(sel)) continue;
         seen.add(sel);
@@ -269,8 +264,14 @@ function checkStateChange(
   // regardless of color contrast — it's a non-color visual indicator
   if (underlineChanged) return "sufficient";
 
-  // If box-shadow changed, that's typically sufficient (adds visible outline/glow)
+  // Box-shadow added on hover/focus: visible outline/glow — always sufficient
   if (shadowChanged && changed.boxShadow !== "none") return "sufficient";
+
+  // Box-shadow removed on hover/focus AND nothing else changed: this is a visual regression
+  // (the element loses a visual indicator without gaining another) — mark as insufficient
+  if (shadowChanged && changed.boxShadow === "none" && !borderChanged && !outlineChanged && !bgChanged) {
+    return "insufficient";
+  }
 
   // No visual change at all — skip (not all elements need hover styles)
   if (!borderChanged && !outlineChanged && !bgChanged) return "no-change";
