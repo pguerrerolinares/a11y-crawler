@@ -38,8 +38,8 @@ async function listIssues(filterCol: "audit_id" | "page_id", filterVal: string, 
     paramIdx += impacts.length;
   }
   if (rule) {
-    conditions.push(`i.rule = $${paramIdx}`);
-    values.push(rule);
+    conditions.push(`i.rule ILIKE $${paramIdx}`);
+    values.push(`%${rule}%`);
     paramIdx++;
   }
   if (category) {
@@ -61,7 +61,7 @@ async function listIssues(filterCol: "audit_id" | "page_id", filterVal: string, 
 
   const where = conditions.join(" AND ");
   const issues = await db.unsafe(
-    `SELECT i.*, p.url as page_url FROM issues i LEFT JOIN pages p ON p.id = i.page_id WHERE ${where} ORDER BY i.created_at ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+    `SELECT i.id, i.page_id, i.audit_id, i.rule, i.impact, i.description, i.help, i.help_url, i.wcag_tags, i.selector, i.html, i.xpath, i.check_source, i.category, i.suggested_fix, i.fix_confidence, i.llm_confidence, i.created_at, p.url as page_url FROM issues i LEFT JOIN pages p ON p.id = i.page_id WHERE ${where} ORDER BY i.created_at ASC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
     [...values, limit, offset]
   );
   const [{ count: total }] = await db.unsafe(
