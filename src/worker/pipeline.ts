@@ -188,7 +188,7 @@ export async function runPipeline(
       const totalPages = await getPageCount(auditId);
       const wcagScore = computeWcagScore(issuesByImpact, totalPages);
 
-      // Serialize template clusters (slim format — no lightIssues)
+      // Serialize template clusters (slim format — no axeIssues)
       const serializedClusters = templates.map((t) => ({
         id: t.id,
         fingerprint: t.fingerprint.toString(16),

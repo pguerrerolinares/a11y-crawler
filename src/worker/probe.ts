@@ -46,6 +46,7 @@ const TEMPLATE_LEVEL_RULES = new Set([
   "state-change-low-contrast",
   // v5 tier system
   "state-change-contrast", "hover-focus", "aria-states", "keyboard-operability",
+  "custom-element-not-focusable",
 ]);
 
 // Feature flag: use 4-phase probe structure (default: true)
