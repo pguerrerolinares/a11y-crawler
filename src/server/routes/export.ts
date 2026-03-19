@@ -24,7 +24,7 @@ export async function handleExport(req: Request, url: URL): Promise<Response> {
   const db = getDb();
   const [audit] = await db`SELECT id, url, status FROM audits WHERE id = ${auditId}`;
   if (!audit) return Response.json({ error: "Audit not found" }, { status: 404 });
-  if (audit.status !== "completed") {
+  if (audit.status !== "completed" && audit.status !== "completed-base") {
     return Response.json({ error: "Audit not completed yet" }, { status: 409 });
   }
 
