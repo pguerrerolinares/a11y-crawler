@@ -20,6 +20,7 @@ export interface LLMUsageTracker {
   totalOutputTokens: number;
   navigationCalls: number;
   enrichmentCalls: number;
+  visionCalls: number;
 }
 
 export class LLMClient {
@@ -36,6 +37,7 @@ export class LLMClient {
     totalOutputTokens: 0,
     navigationCalls: 0,
     enrichmentCalls: 0,
+    visionCalls: 0,
   };
 
   constructor(config: LLMConfig) {
@@ -128,6 +130,51 @@ export class LLMClient {
     }
 
     this.circuitBreakerFailures++;
+    return null;
+  }
+
+  async chatVisionBatch(
+    messages: OpenAI.ChatCompletionMessageParam[],
+    maxTokens = 1500,
+  ): Promise<LLMResponse | null> {
+    if (this.circuitBreakerFailures >= this.circuitBreakerThreshold) {
+      return null;
+    }
+
+    await this.bucket.waitForToken();
+
+    for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+      try {
+        const response = await this.client.chat.completions.create({
+          model: this.visionModel ?? this.model,
+          messages,
+          temperature: 0.1,
+          max_tokens: maxTokens,
+        });
+
+        this.circuitBreakerFailures = 0;
+        const result: LLMResponse = {
+          content: response.choices[0]?.message?.content || "",
+          inputTokens: response.usage?.prompt_tokens || 0,
+          outputTokens: response.usage?.completion_tokens || 0,
+        };
+
+        this.usage.totalCalls++;
+        this.usage.totalInputTokens += result.inputTokens;
+        this.usage.totalOutputTokens += result.outputTokens;
+        this.usage.visionCalls++;
+
+        return result;
+      } catch (err: unknown) {
+        const isRateLimit = err instanceof Error && (err.message.includes("429") || err.message.includes("rate"));
+        if (isRateLimit && attempt < this.maxRetries - 1) {
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        this.circuitBreakerFailures++;
+        return null;
+      }
+    }
     return null;
   }
 

@@ -10,6 +10,7 @@ import { handleLogs } from "./routes/logs.ts";
 import { handleExport } from "./routes/export.ts";
 import { handleSSE } from "./routes/sse.ts";
 import { handleScreenshots } from "./routes/screenshots.ts";
+import { handlePerformance } from "./routes/performance.ts";
 import { getCached, setCached, getTtlForPath } from "./middleware/cache.ts";
 
 const env = validateEnv();
@@ -56,20 +57,23 @@ Bun.serve({
             // Only cache successful responses for completed audits
             // (running/pending audits change state and must not be cached)
             if (response.status === 200) {
+              // Don't cache running/pending audits; use shorter TTL for completed-base
               const isJson = response.headers.get("content-type")?.includes("application/json");
               const body = await response.text();
               let shouldCache = true;
+              let effectiveTtl = ttl;
               if (isJson) {
                 try {
                   const json = JSON.parse(body);
-                  if (json.status && json.status !== "completed") shouldCache = false;
-                } catch {
-                  console.warn(`Cache: failed to parse JSON response for ${cacheKey}`);
-                }
+                  if (json.status && json.status !== "completed" && json.status !== "completed-base") {
+                    shouldCache = false;
+                  }
+                  if (json.status === "completed-base") effectiveTtl = 30_000;
+                } catch { /* not JSON or no status field */ }
               }
               const rebuilt = new Response(body, { status: response.status, headers: response.headers });
               if (shouldCache) {
-                const cachedResponse = await setCached(cacheKey, rebuilt, ttl);
+                const cachedResponse = await setCached(cacheKey, rebuilt, effectiveTtl);
                 logRequest(reqClone, cachedResponse.clone(), Date.now() - start);
                 return cachedResponse;
               }
@@ -138,6 +142,9 @@ async function handleApiRoute(req: Request, url: URL): Promise<Response> {
   if (url.pathname.startsWith("/api/pages/")) {
     if (url.pathname.match(/\/issues$/)) return handleIssues(req, url);
     return handlePages(req, url);
+  }
+  if (url.pathname.match(/^\/api\/audits\/[^/]+\/performance$/)) {
+    return handlePerformance(req, url);
   }
   if (url.pathname.startsWith("/api/audits")) {
     return handleAudits(req, url);

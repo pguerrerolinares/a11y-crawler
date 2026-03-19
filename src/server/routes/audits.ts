@@ -58,7 +58,7 @@ async function listAudits(url: URL): Promise<Response> {
   const db = getDb();
   const params = Object.fromEntries(url.searchParams);
   const { limit, offset } = PaginationSchema.parse(params);
-  const VALID_STATUSES = ["pending", "running", "completed", "failed"] as const;
+  const VALID_STATUSES = ["pending", "running", "completed", "completed-base", "failed"] as const;
   const status = url.searchParams.get("status");
   if (status && !VALID_STATUSES.includes(status as any)) {
     return Response.json({ error: "Invalid status filter" }, { status: 400 });
