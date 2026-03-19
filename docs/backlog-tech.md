@@ -148,36 +148,33 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 ### ~~MEDIUM-14: Tests interactivos podrían fusionar pasadas por elemento~~ ✅ CERRADO (v6)
 - **Fix:** Probe reestructurado en 4 fases. Tier 2 hace una sola pasada unificada hover→focus→click→keyboard. Legacy `testKeyboardOperability` eliminado (absorbido por Tier 2 con focusability pre-check).
 
-### HIGH-6: P4 Capture (color-use CVD) consume 49% del tiempo de auditoría
-- **Observado:** v6 audit (229s, 33 pages): Phase 4 = 103.8s (4.15s/template × 25 templates)
-- **Causa:** `tier2CvdScreenshotDiff()` toma 3 screenshots (1 normal + 2 CVD), procesa cada una con sharp + pixelmatch, crea/destruye CDP session por deficiency.
-- **Archivo:** `src/analyzer/wcag-color-use.ts:130-164`
-- **Fix options:**
-  - (a) Solo deuteranopia (skip achromatopsia) → -40-50% de P4
-  - (b) Skip CVD si Tier 1 DOM heuristics ya encontró issues
-  - (c) Reutilizar CDP session entre deficiencies → -2.5s total
-  - (d) Cache por style fingerprint (templates visualmente iguales no repiten CVD)
-  - (e) Reducir resolución de screenshots
-- **Análisis detallado:** `memory/project_v6_results.md`
+### ~~HIGH-6: P4 Capture (color-use CVD) consume 49% del tiempo de auditoría~~ ✅ CERRADO (v7)
+- **Fix aplicado (v7.0):** Combo A+C+MEDIUM-16:
+  - (A) Solo deuteranopia (skip achromatopsia <0.01% prevalencia) → -50% screenshots/CDP
+  - (C) CDP session reutilizada (1 create/detach por página, no por deficiency)
+  - (MEDIUM-16) Screenshots solo se guardan si diffPercent > 0.5% → reduce I/O
+- **Fix aplicado (v7.1):**
+  - (D) CSS fingerprint cache — templates con mismos stylesheets reusan resultados CVD (13/25 cache hit)
+  - (E) Pixelmatch a 640×360 en vez de 1280×720 (75% menos píxeles)
+- **Fix aplicado (v7.3):** testColorUse + testStatusMessages en `Promise.all` (paralelos)
+- **Resultado real:** P4 de 103.8s → 43.7s (−58%)
 
-### HIGH-7: Navigation consume 19% del tiempo de auditoría
-- **Observado:** v6: Nav total = 40.8s (1.6s avg, hasta 6.2s en páginas pesadas)
-- **Causa:** `page.goto(url, { waitUntil: "load" })` espera a todos los recursos
-- **Archivo:** `src/worker/probe.ts:82`
-- **Fix options:**
-  - (a) `waitUntil: "domcontentloaded"` → más rápido pero puede perder lazy-loaded content
-  - (b) Pipeline de 2 páginas (diferido de v6 por complejidad de ProbeContextManager)
-  - (c) Precargar URLs durante la fase de scan
+### ~~HIGH-7: Navigation consume 19% del tiempo de auditoría~~ ✅ CERRADO (v7)
+- **Fix aplicado:** `waitUntil: "domcontentloaded"` + timeout 60s→30s en probe phased path
+- Legacy probe path sin cambios (rollback seguro con PROBE_V2=false)
+- **Resultado real:** Nav de 40.8s → 7.3s (−82%)
+
+### ~~HIGH-8: P2 Interaction consume 26% del tiempo de auditoría~~ ✅ CERRADO (v7)
+- **Fix aplicado (v7.2):** Batched hover+focus en un solo `page.evaluate` por elemento (elimina ~10 roundtrips IPC → 1). Popup sub-tests mantienen multi-call (path raro).
+- **Resultado real:** P2 de 55.0s → 6.1s (−89%)
 
 ### MEDIUM-15: Screenshots LLM vision enviadas sin crop — coste y tokens innecesarios
 - **Archivo:** `src/analyzer/wcag-color-use.ts:130-200`
 - **Issue:** Tier 2 captura screenshot del viewport completo (1280×720+) y Tier 3 envía 2 imágenes resize a 800px al LLM. Pero si Tier 1 (DOM heuristics) ya identificó elementos concretos (links sin underline, status indicators), el LLM solo necesita ver la región relevante, no la página entera.
 - **Fix:** Después de Tier 1, hacer crop del bounding box de los elementos sospechosos (+padding de contexto ~50px). Enviar al LLM solo los crops (~200-400px) en vez del viewport completo (800px). Reduce tokens de imagen de ~1000+ a ~200-400 por imagen. Ahorro estimado: 50-70% del coste de visión.
 
-### MEDIUM-16: Screenshots de evidencia se guardan para todas las deficiencias
-- **Archivo:** `src/analyzer/wcag-color-use.ts:267-274`
-- **Issue:** Se guardan screenshots normal+CVD para CADA deficiency (deuteranopia, achromatopsia) independientemente del `diffPercent`. Para deficiencies con diff < 0.5% (sin issues), los screenshots ocupan espacio sin aportar evidencia.
-- **Fix:** Solo guardar screenshots de evidencia cuando `diffPercent > threshold` (0.5%). Reduce almacenamiento y I/O en auditorías sin problemas de color.
+### ~~MEDIUM-16: Screenshots de evidencia se guardan para todas las deficiencies~~ ✅ CERRADO (v7)
+- **Fix aplicado:** Guard `if (r.diffPercent <= 0.5) continue;` antes de `Bun.write()`. Solo guarda evidencia cuando hay diferencia significativa.
 
 ### MEDIUM-17: Tier 3 LLM podría recibir contexto textual + crop en vez de página completa
 - **Archivo:** `src/analyzer/wcag-color-use.ts:186-226`

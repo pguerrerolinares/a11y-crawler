@@ -170,22 +170,6 @@ export function evaluateKeyboard(
   return [];
 }
 
-async function captureStyles(page: Page, selector: string): Promise<Record<string, string>> {
-  return await page.evaluate((sel) => {
-    const el = document.querySelector(sel);
-    if (!el) return {};
-    const cs = getComputedStyle(el);
-    return {
-      backgroundColor: cs.backgroundColor,
-      borderColor: cs.borderColor,
-      outlineColor: cs.outlineColor,
-      boxShadow: cs.boxShadow,
-      textDecorationLine: cs.textDecorationLine,
-      color: cs.color,
-    };
-  }, selector);
-}
-
 async function captureAriaStates(page: Page, selector: string): Promise<Record<string, string | null>> {
   return await page.evaluate((sel) => {
     const el = document.querySelector(sel);
@@ -199,84 +183,120 @@ async function captureAriaStates(page: Page, selector: string): Promise<Record<s
   }, selector);
 }
 
-/**
- * Snapshot visibility state of popup candidates BEFORE hover.
- * Returns a serializable map of candidate index → visible boolean.
- * Must be called BEFORE the hover interaction on the trigger element.
- */
-async function snapshotPopupCandidates(page: Page, triggerSelector: string): Promise<boolean[]> {
-  return await page.evaluate((sel) => {
-    const triggerEl = document.querySelector(sel);
-    if (!triggerEl) return [];
-
-    const candidates = [
-      ...Array.from(triggerEl.children),
-      triggerEl.nextElementSibling,
-      triggerEl.parentElement?.querySelector('[role="tooltip"]'),
-      triggerEl.parentElement?.querySelector('[class$="-tooltip"]'),
-      triggerEl.parentElement?.querySelector('[class$="-popup"]'),
-      triggerEl.parentElement?.querySelector('[class$="-popover"]'),
-    ].filter(Boolean) as Element[];
-
-    return candidates.map(el => {
-      const style = getComputedStyle(el);
-      return style.opacity !== "0" &&
-        style.visibility !== "hidden" &&
-        style.display !== "none" &&
-        el.getBoundingClientRect().height > 0;
-    });
-  }, triggerSelector);
+interface BatchedInteractionResult {
+  hoverStyles: Record<string, string>;
+  hoverPopup: PopupInfo | null;
+  focusStyles: Record<string, string>;
+  focusPopup: PopupInfo | null;
+  popupBeforeSnapshot: boolean[];
 }
 
 /**
- * Detect popup by comparing before/after visibility of candidates.
- * Only returns a popup if a candidate changed from invisible → visible after hover.
- * This avoids false positives from always-visible children (e.g. <a><span>text</span></a>).
+ * Batch hover + focus interactions into a single page.evaluate roundtrip.
+ * For the common case (no popup), this replaces ~10 separate roundtrips with 1.
  */
-async function detectPopup(
+async function batchedHoverFocus(
   page: Page,
-  trigger: ElementManifest,
-  beforeSnapshot: boolean[],
-): Promise<PopupInfo | null> {
-  return await page.evaluate(({ sel, before }) => {
-    const triggerEl = document.querySelector(sel);
-    if (!triggerEl) return null;
+  selector: string,
+): Promise<BatchedInteractionResult | null> {
+  return await page.evaluate((sel) => {
+    const el = document.querySelector(sel) as HTMLElement;
+    if (!el) return null;
 
-    const candidates = [
-      ...Array.from(triggerEl.children),
-      triggerEl.nextElementSibling,
-      triggerEl.parentElement?.querySelector('[role="tooltip"]'),
-      triggerEl.parentElement?.querySelector('[class$="-tooltip"]'),
-      triggerEl.parentElement?.querySelector('[class$="-popup"]'),
-      triggerEl.parentElement?.querySelector('[class$="-popover"]'),
-    ].filter(Boolean) as Element[];
-
-    for (let i = 0; i < candidates.length; i++) {
-      const el = candidates[i];
-      const style = getComputedStyle(el);
-      const nowVisible = style.opacity !== "0" &&
-        style.visibility !== "hidden" &&
-        style.display !== "none" &&
-        el.getBoundingClientRect().height > 0;
-
-      // Only flag as popup if it was invisible before and is visible now
-      const wasVisible = before[i] ?? false;
-      if (nowVisible && !wasVisible) {
-        const id = (el as HTMLElement).id ? `#${CSS.escape((el as HTMLElement).id)}` : null;
-        const cls = el.className && typeof el.className === "string"
-          ? "." + el.className.split(" ").filter(Boolean).map(c => CSS.escape(c)).join(".")
-          : "";
-        const selector = id || `${el.tagName.toLowerCase()}${cls}`;
-        const rect = el.getBoundingClientRect();
-        return {
-          selector,
-          type: "css-transition" as const,
-          boundingBox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-        };
-      }
+    // --- Helper: capture computed styles ---
+    function captureStylesOf(target: Element): Record<string, string> {
+      const cs = getComputedStyle(target);
+      return {
+        backgroundColor: cs.backgroundColor,
+        borderColor: cs.borderColor,
+        outlineColor: cs.outlineColor,
+        boxShadow: cs.boxShadow,
+        textDecorationLine: cs.textDecorationLine,
+        color: cs.color,
+      };
     }
-    return null;
-  }, { sel: trigger.selector, before: beforeSnapshot });
+
+    // --- Helper: get popup candidates ---
+    function getPopupCandidates(triggerEl: Element): Element[] {
+      return [
+        ...Array.from(triggerEl.children),
+        triggerEl.nextElementSibling,
+        triggerEl.parentElement?.querySelector('[role="tooltip"]'),
+        triggerEl.parentElement?.querySelector('[class$="-tooltip"]'),
+        triggerEl.parentElement?.querySelector('[class$="-popup"]'),
+        triggerEl.parentElement?.querySelector('[class$="-popover"]'),
+      ].filter(Boolean) as Element[];
+    }
+
+    // --- Helper: snapshot visibility of candidates ---
+    function snapshotVisibility(candidates: Element[]): boolean[] {
+      return candidates.map(c => {
+        const style = getComputedStyle(c);
+        return style.opacity !== "0" &&
+          style.visibility !== "hidden" &&
+          style.display !== "none" &&
+          c.getBoundingClientRect().height > 0;
+      });
+    }
+
+    // --- Helper: detect popup (before→after) ---
+    function findNewPopup(candidates: Element[], before: boolean[]): {
+      selector: string;
+      type: "css-transition";
+      boundingBox: { x: number; y: number; width: number; height: number };
+    } | null {
+      for (let i = 0; i < candidates.length; i++) {
+        const c = candidates[i];
+        const style = getComputedStyle(c);
+        const nowVisible = style.opacity !== "0" &&
+          style.visibility !== "hidden" &&
+          style.display !== "none" &&
+          c.getBoundingClientRect().height > 0;
+        const wasVisible = before[i] ?? false;
+        if (nowVisible && !wasVisible) {
+          const htmlEl = c as HTMLElement;
+          const id = htmlEl.id ? `#${CSS.escape(htmlEl.id)}` : null;
+          const cls = c.className && typeof c.className === "string"
+            ? "." + c.className.split(" ").filter(Boolean).map(cl => CSS.escape(cl)).join(".")
+            : "";
+          const cSel = id || `${c.tagName.toLowerCase()}${cls}`;
+          const rect = c.getBoundingClientRect();
+          return {
+            selector: cSel,
+            type: "css-transition" as const,
+            boundingBox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          };
+        }
+      }
+      return null;
+    }
+
+    const candidates = getPopupCandidates(el);
+
+    // === HOVER ===
+    const hoverBefore = snapshotVisibility(candidates);
+    el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    // With animations disabled, styles are already computed synchronously
+    const hoverStyles = captureStylesOf(el);
+    const hoverPopup = findNewPopup(candidates, hoverBefore);
+    el.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+
+    // === FOCUS ===
+    const focusCandidates = getPopupCandidates(el);
+    const focusBefore = snapshotVisibility(focusCandidates);
+    el.focus();
+    const focusStyles = captureStylesOf(el);
+    const focusPopup = findNewPopup(focusCandidates, focusBefore);
+    el.blur();
+
+    return {
+      hoverStyles,
+      hoverPopup,
+      focusStyles,
+      focusPopup,
+      popupBeforeSnapshot: hoverBefore,
+    };
+  }, selector);
 }
 
 export async function runTier2(
@@ -299,16 +319,21 @@ export async function runTier2(
     if (!handle) continue;
 
     try {
-      // 1. HOVER — use dispatchEvent to bypass Playwright auto-wait (no actionability checks needed,
-      // we only read computed styles). dispatchEvent('mouseover') triggers CSS :hover rules instantly.
-      // Snapshot popup candidates BEFORE hover to detect visibility changes (not false positives).
-      const popupBefore = await snapshotPopupCandidates(page, element.selector);
-      await handle.dispatchEvent("mouseover");
-      await adaptiveWait(page, element.selector, "hover", 50);
-      result.hoverStyles = await captureStyles(page, element.selector);
-      result.hoverPopup = await detectPopup(page, element, popupBefore);
+      // 1+2. HOVER + FOCUS — single page.evaluate roundtrip (eliminates ~10 roundtrips → 1).
+      // batchedHoverFocus dispatches mouseover/mouseout and focus/blur synchronously inside the
+      // browser, capturing styles and popup state without any IPC between each step.
+      const batched = await batchedHoverFocus(page, element.selector);
+      if (!batched) continue;
 
-      // WCAG 1.4.13 sub-tests: persistence, hoverability, dismissibility
+      result.hoverStyles = batched.hoverStyles;
+      result.hoverPopup = batched.hoverPopup;
+      result.focusStyles = batched.focusStyles;
+      result.focusPopup = batched.focusPopup;
+      timer.recordInteraction("hovers");
+      timer.recordInteraction("focuses");
+
+      // WCAG 1.4.13 sub-tests: persistence, hoverability, dismissibility.
+      // Only entered on the rare path where a popup was detected.
       // These use page.mouse.move() (real pointer movement) because we need to test
       // actual mouse interaction behavior (dispatchEvent doesn't activate CSS :hover).
       if (result.hoverPopup) {
@@ -361,22 +386,6 @@ export async function runTier2(
         }, popup.selector);
         result.popupDismissible = dismissed;
       }
-
-      // Clean up hover state before next element
-      await handle.dispatchEvent("mouseout");
-      timer.recordInteraction("hovers");
-
-      // 2. FOCUS — use evaluate to bypass Playwright auto-wait. We only need :focus CSS to activate.
-      const focusPopupBefore = await snapshotPopupCandidates(page, element.selector);
-      await page.evaluate((sel) => {
-        const el = document.querySelector(sel) as HTMLElement;
-        el?.focus();
-      }, element.selector);
-      await adaptiveWait(page, element.selector, "focus", 50);
-      result.focusStyles = await captureStyles(page, element.selector);
-      result.focusPopup = await detectPopup(page, element, focusPopupBefore);
-      await page.evaluate((sel) => { (document.querySelector(sel) as HTMLElement)?.blur(); }, element.selector);
-      timer.recordInteraction("focuses");
 
       // 3. CLICK (only for aria-expanded/pressed elements, with safety guard)
       if (element.hasAriaExpanded || element.hasAriaPressed) {

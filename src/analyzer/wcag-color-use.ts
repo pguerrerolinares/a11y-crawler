@@ -133,31 +133,37 @@ async function tier2CvdScreenshotDiff(page: Page): Promise<CvdDiffResult[]> {
 
   // Take normal screenshot once — reused across all deficiency checks
   const normalShot = await page.screenshot({ type: "png", fullPage: false });
-  const { data: normalRaw, info } = await sharp(normalShot)
+  // Resize to half resolution for faster pixelmatch comparison (75% fewer pixels)
+  const DIFF_WIDTH = 640;
+  const DIFF_HEIGHT = 360;
+  const { data: normalRaw } = await sharp(normalShot)
+    .resize(DIFF_WIDTH, DIFF_HEIGHT)
     .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const { width, height } = info;
 
-  const deficiencies: CvdDeficiency[] = ["deuteranopia", "achromatopsia"];
+  const deficiencies: CvdDeficiency[] = ["deuteranopia"];
 
-  for (const deficiency of deficiencies) {
-    const client = await page.context().newCDPSession(page);
-    try {
-      await client.send("Emulation.setEmulatedVisionDeficiency", { type: deficiency });
-      const cvdShot = await page.screenshot({ type: "png", fullPage: false });
-      await client.send("Emulation.setEmulatedVisionDeficiency", { type: "none" });
+  const client = await page.context().newCDPSession(page);
+  try {
+    for (const deficiency of deficiencies) {
+      try {
+        await client.send("Emulation.setEmulatedVisionDeficiency", { type: deficiency });
+        const cvdShot = await page.screenshot({ type: "png", fullPage: false });
+        await client.send("Emulation.setEmulatedVisionDeficiency", { type: "none" });
 
-      const { data: cvdRaw } = await sharp(cvdShot)
-        .ensureAlpha().resize(width, height).raw().toBuffer({ resolveWithObject: true });
+        const { data: cvdRaw } = await sharp(cvdShot)
+          .ensureAlpha().resize(DIFF_WIDTH, DIFF_HEIGHT).raw().toBuffer({ resolveWithObject: true });
 
-      const diffPercent = computePixelDiffPercent(normalRaw, cvdRaw, width, height);
-      results.push({ deficiency, diffPercent, normalPng: normalShot, cvdPng: cvdShot });
-    } catch (err) {
-      // CDP not available (e.g. Firefox) — skip
-      console.warn(`CVD simulation (${deficiency}) failed:`, err instanceof Error ? err.message : err);
-    } finally {
-      await client.send("Emulation.setEmulatedVisionDeficiency", { type: "none" }).catch(() => {});
-      await client.detach().catch(() => {});
+        const diffPercent = computePixelDiffPercent(normalRaw, cvdRaw, DIFF_WIDTH, DIFF_HEIGHT);
+        results.push({ deficiency, diffPercent, normalPng: normalShot, cvdPng: cvdShot });
+      } catch (err) {
+        // CDP not available (e.g. Firefox) — skip
+        console.warn(`CVD simulation (${deficiency}) failed:`, err instanceof Error ? err.message : err);
+        await client.send("Emulation.setEmulatedVisionDeficiency", { type: "none" }).catch(() => {});
+      }
     }
+  } finally {
+    await client.send("Emulation.setEmulatedVisionDeficiency", { type: "none" }).catch(() => {});
+    await client.detach().catch(() => {});
   }
 
   return results;
@@ -222,6 +228,27 @@ Respond with JSON only:
   return isLlmColorAnalysis(parsed) ? parsed : null;
 }
 
+// ─── CSS Fingerprint Cache ───
+
+async function computeCssFingerprint(page: Page): Promise<string> {
+  const raw = await page.evaluate(() => {
+    const parts: string[] = [];
+    // Collect stylesheet hrefs
+    document.querySelectorAll('link[rel="stylesheet"]').forEach(l => {
+      parts.push((l as HTMLLinkElement).href);
+    });
+    // Collect inline style hashes (just length + first 100 chars as proxy)
+    document.querySelectorAll('style').forEach(s => {
+      const text = s.textContent || '';
+      parts.push(`inline:${text.length}:${text.slice(0, 100)}`);
+    });
+    return parts.sort().join('|');
+  });
+  // Simple hash using Bun's built-in
+  const hash = new Bun.CryptoHasher("md5").update(raw).digest("hex");
+  return hash;
+}
+
 // ─── Main Test Function ───
 
 /**
@@ -259,6 +286,7 @@ export async function testColorUse(
   llmClient: LLMClient | null = null,
   screenshotDir?: string,
   templatePrefix?: string,
+  cvdCache?: Map<string, { diffPercent: number; issues: Issue[] }>,
 ): Promise<ColorUseResult> {
   const issues: Issue[] = [];
   const screenshots: ColorUseResult["screenshots"] = [];
@@ -266,8 +294,18 @@ export async function testColorUse(
   // Tier 1: DOM heuristics (always run)
   issues.push(...await tier1DomHeuristics(page, url));
 
+  // Check CSS fingerprint cache — skip Tier 2+3 if same styles already processed
+  const fingerprint = await computeCssFingerprint(page);
+  if (cvdCache?.has(fingerprint)) {
+    const cached = cvdCache.get(fingerprint)!;
+    // Reuse CVD results from previous template with same styles
+    issues.push(...cached.issues.map(i => ({ ...i, url, id: crypto.randomUUID() })));
+    return { issues, screenshots };
+  }
+
   // Tier 2: CVD screenshot diff
   let bestResult: CvdDiffResult | null = null;
+  const cvdIssuesFromTier2And3: Issue[] = [];
   try {
     const cvdResults = await tier2CvdScreenshotDiff(page);
     for (const r of cvdResults) {
@@ -280,6 +318,7 @@ export async function testColorUse(
     if (screenshotDir && templatePrefix) {
       const { join } = await import("node:path");
       for (const r of cvdResults) {
+        if (r.diffPercent <= 0.5) continue; // Skip saving evidence for negligible diffs
         const normalPath = join(screenshotDir, `${templatePrefix}-${r.deficiency}-normal.png`);
         const cvdPath = join(screenshotDir, `${templatePrefix}-${r.deficiency}-cvd.png`);
         await Bun.write(normalPath, r.normalPng);
@@ -290,9 +329,11 @@ export async function testColorUse(
 
     // Report high CVD diff as informational even without LLM
     if (bestResult && bestResult.diffPercent > 5) {
-      issues.push(makeColorIssue(url, "color-use-cvd", "moderate",
+      const cvdIssue = makeColorIssue(url, "color-use-cvd", "moderate",
         `Page has ${bestResult.diffPercent.toFixed(1)}% pixel difference under ${bestResult.deficiency} simulation — significant color-dependent information may exist (WCAG 1.4.1)`,
-        "html", null));
+        "html", null);
+      issues.push(cvdIssue);
+      cvdIssuesFromTier2And3.push(cvdIssue);
     }
   } catch {
     // CVD simulation not available — skip Tier 2 and 3
@@ -306,13 +347,20 @@ export async function testColorUse(
         bestResult.normalPng, bestResult.cvdPng, llmClient, bestResult.deficiency,
       );
       if (analysis?.hasViolation) {
-        issues.push(makeColorIssue(url, "color-use-llm", analysis.confidence === "high" ? "serious" : "moderate",
+        const llmIssue = makeColorIssue(url, "color-use-llm", analysis.confidence === "high" ? "serious" : "moderate",
           `LLM analysis (${analysis.confidence} confidence): ${analysis.explanation}. Affected: ${analysis.elements.join(", ")} (WCAG 1.4.1)`,
-          "html", analysis.confidence));
+          "html", analysis.confidence);
+        issues.push(llmIssue);
+        cvdIssuesFromTier2And3.push(llmIssue);
       }
     } catch (err) {
       console.warn("LLM vision analysis failed:", err instanceof Error ? err.message : err);
     }
+  }
+
+  // Cache Tier 2+3 results for this CSS fingerprint
+  if (cvdCache) {
+    cvdCache.set(fingerprint, { diffPercent: bestResult?.diffPercent ?? 0, issues: cvdIssuesFromTier2And3 });
   }
 
   return { issues, screenshots };

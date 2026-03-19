@@ -66,6 +66,7 @@ export async function runProbePhase(
   axeCache?: Map<string, Issue[]>,
 ): Promise<void> {
   const probeCtx = new ProbeContextManager(getBrowser, config.probePagesPerContext);
+  const cvdCache = new Map<string, { diffPercent: number; issues: Issue[] }>();
 
   try {
     for (const cluster of templates) {
@@ -80,7 +81,7 @@ export async function runProbePhase(
 
         try {
           const gotoStart = Date.now();
-          await page.goto(url, { waitUntil: "load", timeout: 60_000 });
+          await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
           await injectConsentPrehideCSS(page);
           const navigationMs = Date.now() - gotoStart;
 
@@ -124,7 +125,7 @@ export async function runProbePhase(
             // ── Phase 4: Capture — color-use screenshots, status messages, Tier 3 queue ──
             const p4Start = Date.now();
             const phase4Issues = await runPhase4Capture(
-              page, url, cluster, auditId, llmClient, promotedToTier3,
+              page, url, cluster, auditId, llmClient, promotedToTier3, cvdCache,
             );
             allIssues.push(...phase4Issues);
             phaseTimings.phase4CaptureMs = Date.now() - p4Start;
@@ -331,26 +332,35 @@ async function runPhase4Capture(
   auditId: string,
   llmClient: LLMClient | null,
   promotedToTier3: ElementManifest[],
+  cvdCache: Map<string, { diffPercent: number; issues: Issue[] }>,
 ): Promise<Issue[]> {
   const issues: Issue[] = [];
 
   // Defensive viewport reset after Phase 3 modifications
   await page.setViewportSize({ width: 1280, height: 720 });
 
-  // Color-use CVD (screenshots written directly to disk)
+  // Color-use CVD + Status messages — run in parallel (independent tests, same page)
+  const parallel: Promise<Issue[] | null>[] = [];
+
   if (cluster.testPlan.includes("color-use")) {
     const screenshotDir = join(process.env.REPORTS_DIR || "./reports", auditId, "screenshots");
     await Bun.write(join(screenshotDir, ".keep"), "");
-    const colorResult = await withTimeout(
-      testColorUse(page, url, llmClient, screenshotDir, cluster.id.slice(0, 8)),
-      45_000,
+    parallel.push(
+      withTimeout(
+        testColorUse(page, url, llmClient, screenshotDir, cluster.id.slice(0, 8), cvdCache),
+        45_000,
+      ).then(r => r?.issues ?? []),
     );
-    if (colorResult) issues.push(...colorResult.issues);
   }
 
-  // Status messages (MutationObserver — runs best after viewport is restored)
   if (cluster.testPlan.includes("status-messages")) {
-    const r = await withTimeout(testStatusMessages(page, url), 30_000);
+    parallel.push(
+      withTimeout(testStatusMessages(page, url), 30_000),
+    );
+  }
+
+  const results = await Promise.all(parallel);
+  for (const r of results) {
     if (r) issues.push(...r);
   }
 
