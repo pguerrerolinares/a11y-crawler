@@ -34,7 +34,7 @@ export async function computePixelDiffPercent(
   buf2: Uint8Array | Buffer,
   width: number,
   height: number,
-): Promise<number> {
+): Promise<{ percent: number; boundingBox: DiffBoundingBox | null }> {
   const mod = await import("pixelmatch");
   const pixelmatch = mod.default ?? mod;
   const totalPixels = width * height;
@@ -44,7 +44,23 @@ export async function computePixelDiffPercent(
     diff, width, height,
     { threshold: 0.1, includeAA: false },
   );
-  return (diffPixels / totalPixels) * 100;
+  const percent = (diffPixels / totalPixels) * 100;
+
+  // Compute bounding box of diff region (non-zero alpha in diff buffer)
+  let minX = width, minY = height, maxX = 0, maxY = 0;
+  for (let i = 0; i < totalPixels; i++) {
+    if (diff[i * 4 + 3] > 0) { // alpha channel > 0 means diff pixel
+      const x = i % width;
+      const y = Math.floor(i / width);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  const boundingBox = maxX >= minX ? { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 } : null;
+  return { percent, boundingBox };
 }
 
 // ─── Tier 1: DOM Heuristics (zero cost) ───
@@ -120,11 +136,19 @@ async function tier1DomHeuristics(page: Page, url: string): Promise<Issue[]> {
 
 // ─── Tier 2: CVD Screenshot Diff ───
 
+interface DiffBoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface CvdDiffResult {
   deficiency: CvdDeficiency;
   diffPercent: number;
   normalPng: Buffer;
   cvdPng: Buffer;
+  diffBox: DiffBoundingBox | null;
 }
 
 async function tier2CvdScreenshotDiff(page: Page): Promise<CvdDiffResult[]> {
@@ -153,8 +177,21 @@ async function tier2CvdScreenshotDiff(page: Page): Promise<CvdDiffResult[]> {
         const { data: cvdRaw } = await sharp(cvdShot)
           .ensureAlpha().resize(DIFF_WIDTH, DIFF_HEIGHT).raw().toBuffer({ resolveWithObject: true });
 
-        const diffPercent = await computePixelDiffPercent(normalRaw, cvdRaw, DIFF_WIDTH, DIFF_HEIGHT);
-        results.push({ deficiency, diffPercent, normalPng: normalShot, cvdPng: cvdShot });
+        const { percent: diffPercent, boundingBox: diffBoxSmall } = await computePixelDiffPercent(normalRaw, cvdRaw, DIFF_WIDTH, DIFF_HEIGHT);
+        // Scale bounding box back to full resolution (1280x720) with padding
+        let diffBox: DiffBoundingBox | null = null;
+        if (diffBoxSmall) {
+          const scaleX = 1280 / DIFF_WIDTH;
+          const scaleY = 720 / DIFF_HEIGHT;
+          const PAD = 50;
+          diffBox = {
+            x: Math.max(0, Math.floor(diffBoxSmall.x * scaleX) - PAD),
+            y: Math.max(0, Math.floor(diffBoxSmall.y * scaleY) - PAD),
+            width: Math.min(1280, Math.ceil(diffBoxSmall.width * scaleX) + PAD * 2),
+            height: Math.min(720, Math.ceil(diffBoxSmall.height * scaleY) + PAD * 2),
+          };
+        }
+        results.push({ deficiency, diffPercent, normalPng: normalShot, cvdPng: cvdShot, diffBox });
       } catch (err) {
         // CDP not available (e.g. Firefox) — skip
         console.warn(`CVD simulation (${deficiency}) failed:`, err instanceof Error ? err.message : err);
@@ -194,20 +231,36 @@ async function tier3LlmVisionConfirmation(
   cvdPng: Buffer,
   llmClient: LLMClient,
   deficiency: CvdDeficiency,
+  diffBox: DiffBoundingBox | null = null,
+  tier1Context: string[] = [],
 ): Promise<LlmColorAnalysis | null> {
   const { default: sharp } = await import("sharp");
 
-  // Resize to reduce token cost (max 800px wide)
-  const resized1 = await sharp(normalPng).resize(800, null, { withoutEnlargement: true }).png().toBuffer();
-  const resized2 = await sharp(cvdPng).resize(800, null, { withoutEnlargement: true }).png().toBuffer();
+  // Crop to diff region if available, then resize to max 400px wide
+  let img1 = sharp(normalPng);
+  let img2 = sharp(cvdPng);
+  if (diffBox) {
+    const extract = { left: diffBox.x, top: diffBox.y, width: diffBox.width, height: diffBox.height };
+    img1 = img1.extract(extract);
+    img2 = img2.extract(extract);
+  }
+  const resized1 = await img1.resize(400, null, { withoutEnlargement: true }).png().toBuffer();
+  const resized2 = await img2.resize(400, null, { withoutEnlargement: true }).png().toBuffer();
 
   const b64Normal = resized1.toString("base64");
   const b64Cvd = resized2.toString("base64");
 
+  // Build context from Tier 1 DOM heuristics
+  const contextSection = tier1Context.length > 0
+    ? `\nDOM analysis already identified these potential color-only elements in this region:\n${tier1Context.map(c => `- ${c}`).join("\n")}\n\nFocus your analysis on verifying whether these elements lose meaning under CVD simulation.\n`
+    : "";
+
+  const cropNote = diffBox ? " (cropped to region with highest color difference)" : "";
+
   const prompt = `You are a WCAG accessibility expert analyzing SC 1.4.1 (Use of Color).
 
-Image 1: normal screenshot. Image 2: simulated ${deficiency} color blindness.
-
+Image 1: normal screenshot${cropNote}. Image 2: simulated ${deficiency} color blindness.
+${contextSection}
 A violation exists when information in Image 1 is LOST or AMBIGUOUS in Image 2 because it relied solely on color:
 - Links indistinguishable from regular text
 - Form error/success states no longer visible
@@ -343,8 +396,14 @@ export async function testColorUse(
   // Tier 3: LLM vision confirmation (only if diff exceeds threshold)
   if (bestResult && bestResult.diffPercent > 0.5 && llmClient?.hasVision) {
     try {
+      // Build Tier 1 context for LLM (element descriptions from DOM heuristics)
+      const tier1Context = issues
+        .filter(i => i.rule.startsWith("color-use-"))
+        .map(i => i.description.slice(0, 120));
+
       const analysis = await tier3LlmVisionConfirmation(
         bestResult.normalPng, bestResult.cvdPng, llmClient, bestResult.deficiency,
+        bestResult.diffBox, tier1Context,
       );
       if (analysis?.hasViolation) {
         const llmIssue = makeColorIssue(url, "color-use-llm", analysis.confidence === "high" ? "serious" : "moderate",

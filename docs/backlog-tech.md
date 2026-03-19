@@ -147,18 +147,14 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 - **Fix aplicado (v7.2):** Batched hover+focus en un solo `page.evaluate` por elemento (elimina ~10 roundtrips IPC → 1). Popup sub-tests mantienen multi-call (path raro).
 - **Resultado real:** P2 de 55.0s → 6.1s (−89%)
 
-### MEDIUM-15: Screenshots LLM vision enviadas sin crop — coste y tokens innecesarios
-- **Archivo:** `src/analyzer/wcag-color-use.ts:130-200`
-- **Issue:** Tier 2 captura screenshot del viewport completo (1280×720+) y Tier 3 envía 2 imágenes resize a 800px al LLM. Pero si Tier 1 (DOM heuristics) ya identificó elementos concretos (links sin underline, status indicators), el LLM solo necesita ver la región relevante, no la página entera.
-- **Fix:** Después de Tier 1, hacer crop del bounding box de los elementos sospechosos (+padding de contexto ~50px). Enviar al LLM solo los crops (~200-400px) en vez del viewport completo (800px). Reduce tokens de imagen de ~1000+ a ~200-400 por imagen. Ahorro estimado: 50-70% del coste de visión.
+### ~~MEDIUM-15: Screenshots LLM vision enviadas sin crop~~ ✅ CERRADO (v7)
+- **Fix:** pixelmatch computes diff bounding box → screenshots cropped to diff region (+50px padding) → resized to max 400px (was 800px). Estimated 50-70% token reduction.
 
 ### ~~MEDIUM-16: Screenshots de evidencia se guardan para todas las deficiencies~~ ✅ CERRADO (v7)
 - **Fix aplicado:** Guard `if (r.diffPercent <= 0.5) continue;` antes de `Bun.write()`. Solo guarda evidencia cuando hay diferencia significativa.
 
-### MEDIUM-17: Tier 3 LLM podría recibir contexto textual + crop en vez de página completa
-- **Archivo:** `src/analyzer/wcag-color-use.ts:186-226`
-- **Issue:** El LLM recibe 2 screenshots completas (800px) y debe descubrir qué zonas comparar. Si pixelmatch ya calculó las regiones de diferencia, se podría enviar: (a) crop de la zona con mayor diff, (b) descripción textual de qué elementos están en esa zona (de Tier 1). Reduce tokens y mejora accuracy del LLM al focalizarlo.
-- **Fix:** Usar pixelmatch para localizar bounding box del diff, crop ambas imágenes a esa región (+padding), y añadir al prompt qué elementos de Tier 1 están en esa zona.
+### ~~MEDIUM-17: Tier 3 LLM podría recibir contexto textual + crop~~ ✅ CERRADO (v7)
+- **Fix:** Tier 1 DOM heuristic findings (element descriptions) passed as context in Tier 3 LLM prompt. LLM now receives: cropped diff region + list of suspected color-only elements to verify.
 
 ### LOW-5: Template dedup no reduce ejecuciones de tests CSS-only
 - **Archivo:** `src/worker/probe.ts`
