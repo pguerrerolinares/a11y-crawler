@@ -38,6 +38,13 @@ export async function testStatusMessages(page: Page, url: string): Promise<Issue
 
     // Inject MutationObserver before triggering validation
     try {
+    // Reset globals at start of each form iteration (MEDIUM-2 fix)
+    await page.evaluate(() => {
+      (window as any).__statusMsgObs?.disconnect();
+      (window as any).__statusMsgLog = [];
+      (window as any).__statusMsgObs = null;
+    });
+
     await page.evaluate(() => {
       (window as any).__statusMsgLog = [];
 
@@ -140,8 +147,14 @@ export async function testStatusMessages(page: Page, url: string): Promise<Issue
       }
     }
     } catch {
-      // Ensure observer is disconnected on error path
-      await page.evaluate(() => (window as any).__statusMsgObs?.disconnect()).catch(() => {});
+      // error path
+    } finally {
+      // Always clean up globals (MEDIUM-2 fix)
+      await page.evaluate(() => {
+        (window as any).__statusMsgObs?.disconnect();
+        delete (window as any).__statusMsgLog;
+        delete (window as any).__statusMsgObs;
+      }).catch(() => {});
     }
   }
 

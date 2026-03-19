@@ -117,11 +117,19 @@ If no violations found, respond: {"violations": []}`;
 
   if (!response) return [];
 
-  const parsed = extractJsonFromLlm(response.content) as { violations: Array<{ index: number; confidence: "high" | "medium" | "low"; reason: string }> } | null;
-  if (!parsed?.violations) return [];
+  const parsed = extractJsonFromLlm(response.content);
+  if (!parsed || typeof parsed !== "object") return [];
+  const obj = parsed as Record<string, unknown>;
+  if (!Array.isArray(obj.violations)) return [];
+  const violations = obj.violations as Array<Record<string, unknown>>;
 
-  return parsed.violations
-    .filter((v) => v.index >= 0 && v.index < unique.length)
+  return violations
+    .filter((v): v is { index: number; confidence: "high" | "medium" | "low"; reason: string } =>
+      typeof v.index === "number" &&
+      (v.confidence === "high" || v.confidence === "medium" || v.confidence === "low") &&
+      typeof v.reason === "string" &&
+      v.index >= 0 && v.index < unique.length,
+    )
     .map((v) => {
       const block = unique[v.index];
       return makeSensoryIssue(

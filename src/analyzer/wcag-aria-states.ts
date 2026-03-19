@@ -76,6 +76,19 @@ export async function testAriaStates(page: Page, url: string): Promise<Issue[]> 
         selected: el.getAttribute("aria-selected"),
       }));
 
+      // Safety guard: skip destructive elements
+      const isSafe = await handle.evaluate((el: Element) => {
+        const tag = el.tagName.toLowerCase();
+        const type = el.getAttribute("type");
+        if (tag === "input" && type === "submit") return false;
+        if (tag === "button" && type === "submit") return false;
+        const text = (el.textContent || "").toLowerCase();
+        if (/delete|remove|cancel|logout|sign.?out|purchase|buy|pay/i.test(text)) return false;
+        if (tag === "a" && el.getAttribute("target") === "_blank") return false;
+        return true;
+      });
+      if (!isSafe) continue;
+
       // Click
       const urlBefore = page.url();
       await handle.click();

@@ -67,6 +67,13 @@ export async function testHoverFocus(page: Page, url: string): Promise<Issue[]> 
       const handle = await page.$(trigger.selector);
       if (!handle) continue;
 
+      // Reset globals at start of each trigger iteration (MEDIUM-1 fix)
+      await page.evaluate(() => {
+        (window as any).__hoverPopup = null;
+        (window as any).__hoverObs?.disconnect();
+        (window as any).__hoverObs = null;
+      });
+
       // Inject MutationObserver to detect appearing content
       await page.evaluate(() => {
         (window as any).__hoverPopup = null;
@@ -188,8 +195,14 @@ export async function testHoverFocus(page: Page, url: string): Promise<Issue[]> 
       }
 
     } catch {
-      // Interaction sequence failed — disconnect observer and skip this trigger
-      await page.evaluate(() => (window as any).__hoverObs?.disconnect()).catch(() => {});
+      // Interaction sequence failed — skip this trigger
+    } finally {
+      // Always clean up globals (MEDIUM-1 fix)
+      await page.evaluate(() => {
+        (window as any).__hoverObs?.disconnect();
+        delete (window as any).__hoverPopup;
+        delete (window as any).__hoverObs;
+      }).catch(() => {});
     }
   }
 

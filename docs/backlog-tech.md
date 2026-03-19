@@ -6,25 +6,17 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 
 ## MEDIUM — Code Quality
 
-### MEDIUM-1: Window global namespace pollution en hover-focus
-- **Archivo:** `src/analyzer/wcag-hover-focus.ts:72-106`
-- **Issue:** `__hoverPopup` y `__hoverObs` se inyectan en `window` y no se limpian en el success path. Si un trigger anterior deja datos stale, el siguiente puede leerlos.
-- **Fix:** Resetear globals al inicio de cada iteración de trigger y hacer `delete` en finally.
+### ~~MEDIUM-1: Window global namespace pollution en hover-focus~~ ✅ CERRADO (v7)
+- **Fix:** Reset globals al inicio de cada trigger + `delete` en `finally` block.
 
-### MEDIUM-2: Window global namespace pollution en status-messages
-- **Archivo:** `src/analyzer/wcag-status-messages.ts:42,98`
-- **Issue:** `__statusMsgLog` y `__statusMsgObs` acumulan entries entre iteraciones de forms.
-- **Fix:** Clear globals al inicio de cada form iteration.
+### ~~MEDIUM-2: Window global namespace pollution en status-messages~~ ✅ CERRADO (v7)
+- **Fix:** Reset/disconnect observer al inicio de cada form + `delete` en `finally` block.
 
-### MEDIUM-3: ARIA states test clicks sin safety check suficiente
-- **Archivo:** `src/analyzer/wcag-aria-states.ts:81`
-- **Issue:** `handle.click()` en producción puede disparar acciones destructivas (submit, delete, purchase). El selector `[aria-haspopup]` puede matchear botones peligrosos.
-- **Fix:** Skip `type="submit"` buttons. Considerar `dispatchEvent(new MouseEvent('click'))` cancelable.
+### ~~MEDIUM-3: ARIA states test clicks sin safety check suficiente~~ ✅ CERRADO (v7)
+- **Fix:** Safety guard skips `type="submit"`, `target="_blank"`, y texto destructivo (delete/logout/purchase/pay).
 
-### MEDIUM-4: Sensory instructions LLM response sin type guard
-- **Archivo:** `src/analyzer/wcag-sensory-instructions.ts:120`
-- **Issue:** `extractJsonFromLlm()` se castea directamente sin validación runtime. Si el LLM responde con shape inesperado, `.violations.filter()` crashea.
-- **Fix:** Añadir type guard como `isLlmColorAnalysis()` en wcag-color-use.ts.
+### ~~MEDIUM-4: Sensory instructions LLM response sin type guard~~ ✅ CERRADO (v7)
+- **Fix:** Type guard completo: valida `typeof`, `Array.isArray(violations)`, y cada violation con `index`/`confidence`/`reason`.
 
 ### MEDIUM-5: `require("pixelmatch")` en contexto ESM es frágil
 - **Archivo:** `src/analyzer/wcag-color-use.ts:39`
