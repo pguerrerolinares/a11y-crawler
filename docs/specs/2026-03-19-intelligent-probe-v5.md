@@ -1,7 +1,7 @@
 # Intelligent Probe v5 — Design Spec
 
 > Date: 2026-03-19
-> Status: Ready for implementation (2 review rounds passed — critic + code review, 14 issues resolved)
+> Status: Implemented and validated (261s for 33 pages, -85% vs v4.5)
 > Author: Paul + Claude
 > Scope: Optimize audit pipeline (time, cost, quality) without sacrificing detection accuracy
 
@@ -866,8 +866,10 @@ Response:
 
 | Metric | Before (v4.5) | After (v5) | Improvement |
 |--------|---------------|------------|-------------|
-| Time (33 pages) | 1,734s | ~900-1200s (est.) | -30-45% |
-| Cost per audit | ~$0.50 | ~$0.10-0.20 (est.) | -60-80% |
+| Time (33 pages) | 1,734s | **261s** | **-85%** |
+| Issues | 2,487 | **2,815** | **+13%** |
+| Rules | 31 | **33** | **+2** |
+| Cost per audit | ~$0.50 | ~$0.50 | 0% (Tier 3 crop/batch/cache not yet activated) |
 | Cost on re-audit (same site) | ~$0.50 | ~$0.05-0.10 (est.) | -80-90% (cache, conservative) |
 | Aiblu coverage | 81.5% | ~92-96% (est.) | +3 gaps closed |
 | Issues with WCAG criterion | 100% | 100% | maintained |
@@ -899,3 +901,45 @@ Response:
 - **Increase `max_tokens` for batch vision calls**: current `chatVision` uses `max_tokens: 500`, which is insufficient for batch responses with 5 elements (each needs ~100 tokens for JSON). Set to `max_tokens: 1500` for batch calls, keep 500 for single-element calls.
 - **Crop files stored on disk** at `reports/{auditId}/crops/{selector_hash}.png`, following the same pattern as CVD screenshots. Referenced by path in `tier3_jobs.elements` JSONB, NOT embedded as base64.
 - **Estimation assumptions** for Section 11: time estimates assume ~30-50% of elements resolved by CSSOM in Tier 1 (sites with same-origin CSS), adaptive waits averaging 60% of max timeout, and 25 style groups from 33 pages. Cost assumes crop reduces vision tokens by ~70% and batch reduces LLM calls by ~60%.
+
+---
+
+## 14. Actual Results (2026-03-19)
+
+Validated against kutxabankinvestment.es audit (33 pages).
+
+### Overall
+
+| Metric | v4.5 | v5 | Delta |
+|--------|------|----|-------|
+| Duration | 1,734s (29 min) | 261s (4.35 min) | **-85%** |
+| Issues | 2,487 | 2,815 | **+13%** |
+| Rules | 31 | 33 | **+2** |
+| LLM cost | ~$0.50 | ~$0.50 | 0% (Tier 3 optimizations not yet activated) |
+
+### Tier 2 Unified Interaction Pass
+
+| Metric | Before fix | After fix |
+|--------|-----------|-----------|
+| Total interactions | ~640s (est.) | 52s |
+| Interaction count | — | 702 |
+| Avg per interaction | ~1s (fixed waits) | ~74ms (adaptive) |
+
+### Tier 1 CSSOM Analysis
+
+| Metric | Result |
+|--------|--------|
+| Elements analyzed | 351 |
+| Resolved in Tier 1 | 0 |
+| Promoted to Tier 2 | 351 |
+| skippedByFingerprint | 0 |
+
+**Root cause:** All CSS is cross-origin (CDN), CSSOM analysis returns null for every element. Tier 1 adds ~1s overhead with zero benefit on this site. See backlog HIGH-5.
+
+### Performance Endpoint Data
+
+Available at `GET /api/audits/:id/performance`. Provides:
+- Phase breakdown: `discover`, `scan`, `classify`, `probe`
+- Tier breakdown per template: `tier0Ms`, `tier1Ms`, `tier2Ms`, `tier3Ms`
+- LLM summary: `totalCalls`, `visionCalls`, `estimatedCost`
+- Savings summary: `fingerprintSkips`, `tier3CacheHits`, `earlyTerminations`
