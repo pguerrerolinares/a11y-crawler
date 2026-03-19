@@ -27,7 +27,7 @@ export async function runPipeline(
     wcagLevel: userConfig.wcagLevel ?? "AA",
     pageTimeout: userConfig.pageTimeout ?? 15_000,
     concurrency: userConfig.concurrency ?? 3,
-    pagesPerContext: userConfig.pagesPerContext ?? 25,
+    pagesPerContext: userConfig.pagesPerContext ?? 5,
     probePagesPerContext: userConfig.probePagesPerContext ?? 5,
     maxProbeTemplates: userConfig.maxProbeTemplates ?? 25,
     navModel: userConfig.navModel ?? "kimi-k2-turbo-preview",
