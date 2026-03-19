@@ -44,6 +44,27 @@ function ConfidenceBadge({ confidence }: { confidence: string | null }) {
   );
 }
 
+function EvidenceScreenshots({ auditId }: { auditId: string }) {
+  const { data } = useQuery({
+    queryKey: ["screenshots", auditId],
+    queryFn: () => fetch(`/api/audits/${auditId}/screenshots`).then(r => r.json()) as Promise<{ screenshots: string[] }>,
+  });
+  if (!data?.screenshots?.length) return null;
+  return (
+    <div className="flex gap-2 items-center flex-wrap">
+      <strong>Evidence:</strong>
+      {data.screenshots.map((filename: string) => (
+        <a key={filename}
+           href={`/api/audits/${auditId}/screenshots/${filename}`}
+           target="_blank" rel="noopener noreferrer"
+           className="text-blue-500 underline">
+          {filename}
+        </a>
+      ))}
+    </div>
+  );
+}
+
 interface IssueTableProps {
   auditId: string;
   pageId?: string;
@@ -164,7 +185,7 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                               <p>
                                 <strong>WCAG: </strong>
                                 <a
-                                  href={`https://www.w3.org/WAI/WCAG22/Understanding/${issue.wcagCriterion}`}
+                                  href={`https://www.w3.org/TR/WCAG22/#success-criterion-${issue.wcagCriterion.replace(/\./g, "-")}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-blue-500 underline"
@@ -179,17 +200,7 @@ export function IssueTable({ auditId, pageId }: IssueTableProps) {
                               </a>
                             )}
                             {(issue.rule === "color-use-cvd" || issue.rule === "color-use-llm") && (
-                              <div className="flex gap-2 items-center">
-                                <strong>Evidence:</strong>
-                                <a href={`/api/audits/${issue.auditId}/screenshots/deuteranopia-normal.png`}
-                                   target="_blank" rel="noopener" className="text-blue-500 underline">
-                                  Normal
-                                </a>
-                                <a href={`/api/audits/${issue.auditId}/screenshots/deuteranopia-cvd.png`}
-                                   target="_blank" rel="noopener" className="text-blue-500 underline">
-                                  CVD Simulation
-                                </a>
-                              </div>
+                              <EvidenceScreenshots auditId={issue.auditId} />
                             )}
                           </div>
                         </TableCell>
