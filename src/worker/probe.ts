@@ -49,10 +49,6 @@ const TEMPLATE_LEVEL_RULES = new Set([
   "custom-element-not-focusable",
 ]);
 
-// Feature flag: use 4-phase probe structure (default: true)
-// Set PROBE_V2=false to fall back to legacy single-pass probe for debugging.
-const USE_PHASED_PROBE = process.env.PROBE_V2 !== "false";
-
 const withTimeout = <T>(fn: Promise<T>, ms = 30_000): Promise<T | null> =>
   Promise.race([fn, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
 
@@ -87,7 +83,7 @@ export async function runProbePhase(
 
           const allIssues: Issue[] = [];
 
-          if (USE_PHASED_PROBE) {
+          {
             const phaseTimings: Record<string, number> = { navigationMs };
 
             // ── Tier 0: Element Interaction Manifest (shared across Phase 1 and 2) ──
@@ -132,12 +128,6 @@ export async function runProbePhase(
             phaseTimings.totalTemplateMs = Date.now() - gotoStart;
 
             parentSpan.setMeta({ phaseTimings });
-          } else {
-            // Legacy probe (single-pass for debugging/rollback)
-            const result = await runProbeLegacy(
-              page, cluster, url, timer, axeCache, config, llmClient, auditId, parentSpan,
-            );
-            allIssues.push(...result);
           }
 
           // ── Template amplification ──
@@ -377,119 +367,6 @@ async function runPhase4Capture(
   }
 
   return issues;
-}
-
-// ── Legacy probe (fallback for PROBE_V2=false) ──
-
-async function runProbeLegacy(
-  page: Page,
-  cluster: TemplateCluster,
-  url: string,
-  timer: TierTimer,
-  axeCache: Map<string, Issue[]> | undefined,
-  config: PipelineConfig,
-  llmClient: LLMClient | null,
-  auditId: string,
-  parentSpan: { setMeta: (m: Record<string, unknown>) => void },
-): Promise<Issue[]> {
-  const allIssues: Issue[] = [];
-
-  // Tier 0: manifest
-  timer.startTier("tier0");
-  const manifest = await collectManifest(page);
-  const styleGroups = groupByFingerprint(manifest);
-  timer.endTier("tier0", {
-    elementsDiscovered: manifest.length,
-    styleGroups: styleGroups.length,
-    representativeElements: styleGroups.length,
-  });
-
-  // axe-core full
-  if (cluster.testPlan.includes("axe-full")) {
-    let axeIssues: Issue[];
-    if (axeCache?.has(url)) {
-      axeIssues = axeCache.get(url)!;
-    } else {
-      axeIssues = await runAxeFull(page, url, config);
-    }
-    allIssues.push(...axeIssues);
-    parentSpan.setMeta({ axeViolations: axeIssues.length });
-  }
-
-  // Error identification
-  if (cluster.testPlan.includes("error-identification")) {
-    const errorIdIssues = await testErrorIdentification(page, url);
-    allIssues.push(...errorIdIssues);
-    parentSpan.setMeta({ errorIdViolations: errorIdIssues.length });
-  }
-
-  // evaluate tests (parallel)
-  const evaluateTests: Promise<Issue[]>[] = [];
-  if (cluster.testPlan.includes("target-size")) evaluateTests.push(testTargetSize(page, url));
-  if (cluster.testPlan.includes("multimedia")) evaluateTests.push(testMultimedia(page, url));
-  if (cluster.testPlan.includes("timed-events")) evaluateTests.push(testTimedEvents(page, url));
-  if (cluster.testPlan.includes("non-text-contrast")) evaluateTests.push(testNonTextContrast(page, url));
-  if (cluster.testPlan.includes("meaningful-sequence")) evaluateTests.push(testMeaningfulSequence(page, url));
-  if (cluster.testPlan.includes("semantic-structure")) evaluateTests.push(testSemanticStructure(page, url));
-  if (cluster.testPlan.includes("legal-a11y")) evaluateTests.push(testLegalA11y(page, url));
-  const evaluateResults = await Promise.all(evaluateTests);
-  allIssues.push(...evaluateResults.flat());
-
-  // Interactive tests (legacy)
-  if (cluster.testPlan.includes("interactive")) {
-    const interactiveIssues = await runInteractiveTests(page, url);
-    allIssues.push(...interactiveIssues);
-  }
-
-  // Tier 1: CSSOM
-  const { issues: tier1Issues, promotedElements } = await runTier1(page, styleGroups, url, timer);
-  allIssues.push(...tier1Issues);
-
-  // Tier 2: interaction
-  const { issues: tier2Issues, promotedToTier3 } = await runTier2(page, promotedElements, url, timer);
-  allIssues.push(...tier2Issues);
-
-  // Tier 3: queue
-  if (promotedToTier3.length > 0 && llmClient) {
-    const tier3Elements = promotedToTier3.map(el => ({
-      selector: el.selector,
-      context: `${el.tag} element: ${el.accessibleName || el.selector}`,
-      promptType: "color-use-link",
-    }));
-    await insertTier3Job(auditId, cluster.id, tier3Elements, 2).catch(err => {
-      console.warn(`[probe] Failed to insert tier3 job: ${err}`);
-    });
-  }
-
-  // Status messages
-  if (cluster.testPlan.includes("status-messages")) {
-    const r = await withTimeout(testStatusMessages(page, url), 30_000);
-    if (r) allIssues.push(...r);
-  }
-
-  // Viewport tests
-  if (cluster.testPlan.includes("reflow")) allIssues.push(...await testReflow(page, url));
-  if (cluster.testPlan.includes("resize-text")) allIssues.push(...await testResizeText(page, url));
-  if (cluster.testPlan.includes("text-spacing")) allIssues.push(...await testTextSpacing(page, url));
-
-  // CVD color analysis
-  if (cluster.testPlan.includes("color-use")) {
-    const screenshotDir = join(process.env.REPORTS_DIR || "./reports", auditId, "screenshots");
-    await Bun.write(join(screenshotDir, ".keep"), "");
-    const colorResult = await withTimeout(
-      testColorUse(page, url, llmClient, screenshotDir, cluster.id.slice(0, 8)),
-      45_000,
-    );
-    if (colorResult) allIssues.push(...colorResult.issues);
-  }
-
-  // Sensory instructions
-  if (cluster.testPlan.includes("sensory-instructions")) {
-    const r = await withTimeout(testSensoryInstructions(page, url, llmClient), 30_000);
-    if (r) allIssues.push(...r);
-  }
-
-  return allIssues;
 }
 
 // ── Shared axe-core full scan ──
