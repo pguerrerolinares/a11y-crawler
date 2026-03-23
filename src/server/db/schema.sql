@@ -94,7 +94,7 @@ CREATE INDEX IF NOT EXISTS idx_pages_audit ON pages(audit_id);
 CREATE INDEX IF NOT EXISTS idx_issues_audit ON issues(audit_id);
 CREATE INDEX IF NOT EXISTS idx_issues_impact ON issues(audit_id, impact);
 CREATE INDEX IF NOT EXISTS idx_issues_rule ON issues(audit_id, rule);
-CREATE INDEX IF NOT EXISTS idx_issues_report_category ON issues(audit_id, report_category);
+-- idx_issues_report_category created by report-columns migration
 CREATE INDEX IF NOT EXISTS idx_events_audit ON audit_events(audit_id);
 CREATE INDEX IF NOT EXISTS idx_logs_created ON request_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_logs_path ON request_logs(path);
