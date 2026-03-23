@@ -31,10 +31,8 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 
 ## MEDIUM — Data Quality
 
-### MEDIUM-9: Axe best-practice rules sin wcagCriterion ni etiqueta
-- **Archivo:** Pipeline de axe-core → DB (scan-light results)
-- **Issue:** Reglas como `region` (27 issues) y `landmark-one-main` (1) de axe-core quedan con `wcagCriterion: null`. No se distingue entre "sin mapeo WCAG" y "es best-practice". Afecta al reporting: 28/50 issues (56%) sin criterio WCAG asignado en auditoría de example-client.com.
-- **Fix:** Mapear `region` → 1.3.1, `landmark-one-main` → best-practice. Crear lookup table de axe rules → WCAG criterion, o extraerlo de `axe.result.tags` (axe incluye tags como `wcag2a`, `wcag131`, `best-practice`).
+### ~~MEDIUM-9: Axe best-practice rules sin wcagCriterion ni etiqueta~~ ✅ CERRADO (v5)
+- **Estado:** RESUELTO en commit `17c43bf` (2026-03-19). `extractWcagCriterion` ampliado con slug lookup + rule name fallback. Resultado: 100% de issues con WCAG criterion.
 
 ### ~~MEDIUM-10: Axe issues pierden `message` en pipeline~~ ✅ CERRADO (v7)
 - **Fix:** `description` ahora incluye `node.failureSummary` cuando disponible (`v.description + ". " + failureSummary`). Aplicado en scan.ts y probe.ts.
@@ -75,9 +73,11 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 ### ~~MEDIUM-11: `status-messages` no detecta RM-11 (WCAG 4.1.3) en /contacto/~~ ✅ CERRADO (v7)
 - **Estado:** Verificado — el scanner detecta 14 issues en `/contacto/` (checkValidity + MutationObserver). Gap cerrado.
 
-### MEDIUM-12: `hover-focus` no detecta RM-15 (WCAG 1.4.13) en /equipo/ — popup CSS-only
-- **Estado:** Parcialmente cubierto — Tier 2 detecta 13 issues de `state-change-contrast` en `/equipo/` (hover sin cambio visual suficiente). Pero el popup detection no detecta contenido CSS-only que aparece con `:hover` (opacity/display transitions) porque `dispatchEvent("mouseover")` no activa CSS `:hover`.
-- **Fix pendiente:** Para detectar popups CSS-only, necesitaría `page.mouse.move()` real sobre elementos candidatos. Requiere path separado del batched hover (impacto en P2 performance). Alternativa: heurística estática que busque hijos con `opacity:0`/`display:none` + regla CSS `:hover` que los muestra.
+### ~~MEDIUM-12: `hover-focus` no detecta RM-15 (WCAG 1.4.13) en /equipo/ — popup CSS-only~~ ✅ CERRADO (v7.3)
+- **Fix aplicado:** Detección CSS-only añadida a `wcag-hover-focus.ts` con doble estrategia:
+  1. **Discovery ampliado:** Además de triggers explícitos (aria-describedby, data-tooltip), ahora busca elementos con hijos ocultos (opacity:0/display:none/visibility:hidden) que matchean patrones popup (tooltip, popover, dropdown, submenu, overlay) + siblings ocultos de elementos interactivos.
+  2. **Detección before/after:** Antes del `handle.hover()` (real mouse, activa CSS `:hover`), captura snapshot de visibilidad de children/siblings. Después compara: si algo pasó de oculto a visible, es un CSS-only popup. Se usa como fallback si MutationObserver no detecta nada.
+- **Impacto en performance:** Mínimo — el snapshot es un solo `page.evaluate()` antes del hover.
 
 ### MEDIUM-13: `sensory-instructions` no detecta RM-13 (WCAG 1.3.3) en /formulario/
 - **Referencia Auditoria manual de referencia:** RM-13 — formulario con instrucciones implícitas que dependen del contexto visual (obligatoriedad por estilo/color)
