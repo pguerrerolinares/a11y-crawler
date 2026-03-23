@@ -5,7 +5,7 @@ import type { ScanResult, CrawlError, PipelineConfig } from "../types/pipeline";
 import { AxeBuilder } from "@axe-core/playwright";
 import { SlotPool } from "./slot-pool";
 import { NODE_SIGNATURE_FN, simhash } from "../analyzer/fingerprint";
-import { insertPageV4, insertIssuesV4 } from "./db";
+import { insertPageV4, insertIssuesV4 } from "./db-pages";
 import { injectConsentPrehideCSS } from "../analyzer/consent-blocker";
 import { discoverNavTargets } from "../discovery/nav";
 import type { LLMClient } from "../llm/client";

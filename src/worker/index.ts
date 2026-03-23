@@ -1,5 +1,6 @@
 import { chromium } from "playwright";
-import { initWorkerDb, claimNextAudit, markAuditFailed } from "./db.ts";
+import { initWorkerDb } from "./db.ts";
+import { claimNextAudit, markAuditFailed } from "./db-audit.ts";
 import { runPipeline } from "./pipeline";
 import { LLMClient } from "../llm/client";
 import type { Browser } from "playwright";

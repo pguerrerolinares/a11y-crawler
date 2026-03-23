@@ -6,8 +6,8 @@ import {
   allTier3JobsDone,
   tier3CacheLookup,
   tier3CacheSet,
-  markAuditFullyCompleted,
-} from "./db";
+} from "./db-tier3";
+import { markAuditFullyCompleted } from "./db-audit";
 import { renderPrompt, parseTier3Response } from "./tier3-prompts";
 
 const TIER3_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
