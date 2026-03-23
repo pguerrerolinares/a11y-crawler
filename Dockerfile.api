@@ -15,9 +15,15 @@ WORKDIR /app
 COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile --production
 
+# Install Typst for PDF report generation
+ADD https://github.com/typst/typst/releases/latest/download/typst-x86_64-unknown-linux-musl.tar.xz /tmp/typst.tar.xz
+RUN tar -xJf /tmp/typst.tar.xz --strip-components=1 -C /usr/local/bin/ && rm /tmp/typst.tar.xz
+
 # Copy only server + types source (no crawler/analyzer code needed)
 COPY src/server/ src/server/
 COPY src/types/ src/types/
+COPY src/reporter/ src/reporter/
+COPY templates/ templates/
 
 # Copy built frontend
 COPY --from=frontend-build /app/dist/frontend/ dist/frontend/
