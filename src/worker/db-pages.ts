@@ -97,6 +97,9 @@ export async function insertIssuesV4(
 ): Promise<void> {
   if (issues.length === 0) return;
   const db = getWorkerDb();
+  // PostgreSQL rejects null bytes (\0) in TEXT columns — strip them
+  const sanitize = (s: string | undefined | null) => (s ?? "").replace(/\0/g, "");
+
   for (const i of issues) {
     const reportCategory = getReportCategory(i.rule);
     const wcagCriterion = i.wcagCriterion
@@ -110,10 +113,10 @@ export async function insertIssuesV4(
          report_category, wcag_criterion)
       VALUES
         (${auditId}, ${pageId}, ${i.rule}, ${i.impact},
-         ${i.description ?? ""}, ${i.help ?? ""}, ${i.helpUrl ?? ""},
-         ${json(i.wcagTags ?? [])}, ${i.selector ?? ""}, ${i.html ?? ""},
-         ${i.xpath ?? ""}, ${i.checkSource}, ${i.category ?? "structural"},
-         ${i.suggestedFix ?? ""}, ${i.fixConfidence ?? null},
+         ${sanitize(i.description)}, ${sanitize(i.help)}, ${sanitize(i.helpUrl)},
+         ${json(i.wcagTags ?? [])}, ${sanitize(i.selector)}, ${sanitize(i.html)},
+         ${sanitize(i.xpath)}, ${i.checkSource}, ${i.category ?? "structural"},
+         ${sanitize(i.suggestedFix)}, ${i.fixConfidence ?? null},
          ${i.templateId ?? null}, ${i.affectedPages ?? 1}, ${i.amplifiedFrom ?? null},
          ${reportCategory}, ${wcagCriterion})
     `;

@@ -12,6 +12,33 @@ RESET='\033[0m'
 echo -e "${CYAN}Starting a11y Crawler (v3 — API + Worker + local Chromium)${RESET}"
 echo ""
 
+# --- PostgreSQL (Docker) ---
+if ! docker ps --format '{{.Names}}' | grep -q '^postgres-dev$'; then
+  if docker ps -a --format '{{.Names}}' | grep -q '^postgres-dev$'; then
+    echo -e "${GREEN}▶ PostgreSQL → starting existing container${RESET}"
+    docker start postgres-dev > /dev/null
+  else
+    echo -e "${GREEN}▶ PostgreSQL → creating container on port 5433${RESET}"
+    docker run -d --name postgres-dev -p 5433:5432 \
+      -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=a11y \
+      postgres:16-alpine > /dev/null
+  fi
+  # Wait for PostgreSQL to be ready
+  echo -n "  Waiting for PostgreSQL..."
+  for i in $(seq 1 30); do
+    if docker exec postgres-dev pg_isready -U postgres > /dev/null 2>&1; then
+      echo -e " ${GREEN}ready${RESET}"
+      break
+    fi
+    sleep 0.5
+    echo -n "."
+  done
+else
+  echo -e "${GREEN}▶ PostgreSQL → already running${RESET}"
+fi
+
+export DATABASE_URL="${DATABASE_URL:-postgres://postgres:dev@localhost:5433/a11y}"
+
 # --- Kill previous processes on dev ports ---
 fuser -k 3000/tcp 2>/dev/null || true
 fuser -k 5173/tcp 2>/dev/null || true

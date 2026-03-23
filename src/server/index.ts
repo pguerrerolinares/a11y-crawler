@@ -54,11 +54,11 @@ Bun.serve({
             }
 
             const response = await handleApiRoute(req, url);
-            // Only cache successful responses for completed audits
+            // Only cache successful JSON responses for completed audits
             // (running/pending audits change state and must not be cached)
-            if (response.status === 200) {
-              // Don't cache running/pending audits; use shorter TTL for completed-base
-              const isJson = response.headers.get("content-type")?.includes("application/json");
+            // Skip cache for binary responses (PDF, CSV) — text() corrupts binary data
+            const isJson = response.headers.get("content-type")?.includes("application/json");
+            if (response.status === 200 && isJson) {
               const body = await response.text();
               let shouldCache = true;
               let effectiveTtl = ttl;
