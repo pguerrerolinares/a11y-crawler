@@ -110,10 +110,11 @@ async function exportCsv(auditId: string): Promise<Response> {
 }
 
 async function exportPdf(auditId: string, url: URL): Promise<Response> {
-  const detail = (url.searchParams.get("detail") ?? "standard") as "standard" | "full";
-  if (!["standard", "full"].includes(detail)) {
+  const detailParam = url.searchParams.get("detail") ?? "standard";
+  if (!["standard", "full"].includes(detailParam)) {
     return Response.json({ error: "Invalid detail level. Use 'standard' or 'full'" }, { status: 400 });
   }
+  const detail = detailParam as "standard" | "full";
 
   try {
     const reportData = await buildReportData(auditId, detail);
@@ -122,7 +123,7 @@ async function exportPdf(auditId: string, url: URL): Promise<Response> {
     const date = new Date().toISOString().slice(0, 10);
     const filename = `audit-${auditId.slice(0, 8)}-${date}-${detail}.pdf`;
 
-    return new Response(pdfBuffer, {
+    return new Response(new Uint8Array(pdfBuffer), {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="${filename}"`,

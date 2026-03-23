@@ -250,8 +250,8 @@ export async function buildReportData(
     }
   }
 
-  // Build issuesByImpact
-  const issuesByImpact: Record<string, number> = {};
+  // Build issuesByImpact — initialize all levels to 0 so template never hits missing keys
+  const issuesByImpact: Record<string, number> = { critical: 0, serious: 0, moderate: 0, minor: 0 };
   for (const issue of issues) {
     issuesByImpact[issue.impact] = (issuesByImpact[issue.impact] ?? 0) + 1;
   }
@@ -264,7 +264,7 @@ export async function buildReportData(
       baseUrl: audit.url as string,
       date: new Date().toISOString(),
       wcagLevel: "AA",
-      toolVersions: { crawler: "7.3.0", axeCore: "4.x" },
+      toolVersions: { crawler: "7.3.0", axeCore: "4.11.1" },
       totalDurationSeconds: (audit.duration_seconds as number) ?? 0,
       detailLevel: detail,
     },

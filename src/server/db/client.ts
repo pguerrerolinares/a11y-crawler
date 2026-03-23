@@ -74,9 +74,7 @@ async function runMigrations(conn: InstanceType<typeof SQL>) {
   if (!appliedSet.has("report-columns")) {
     console.log("Running migration: report-columns");
     await conn.begin(async (tx) => {
-      // Clean slate — no production data to preserve
-      await tx.unsafe(`TRUNCATE audits CASCADE`);
-      // Add new columns (fresh table, no backfill needed)
+      // Add new columns — existing rows get default values, no data loss
       await tx.unsafe(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS report_category TEXT NOT NULL DEFAULT 'uncategorized'`);
       await tx.unsafe(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS wcag_criterion TEXT NOT NULL DEFAULT ''`);
       // Index for report queries

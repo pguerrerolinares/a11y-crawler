@@ -1,6 +1,7 @@
 import type { ReportData } from "./report-data";
 import { randomUUID } from "crypto";
 import { unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 const MAX_CONCURRENT = 2;
 let activeCount = 0;
@@ -30,14 +31,15 @@ export async function renderPdf(data: ReportData): Promise<Buffer> {
   await acquire();
 
   const uid = randomUUID();
-  const dataFilename = `data-${uid}.json`;
-  const dataPath = `${TEMPLATES_DIR}/${dataFilename}`;
-  const outPath = `${TEMPLATES_DIR}/out-${uid}.pdf`;
+  // Write temp files to OS tmpdir (not the templates directory)
+  const dataPath = `${tmpdir()}/typst-data-${uid}.json`;
+  const outPath = `${tmpdir()}/typst-out-${uid}.pdf`;
 
   try {
     await Bun.write(dataPath, JSON.stringify(data));
 
-    const result = await Bun.$`typst compile --root ${TEMPLATES_DIR} --font-path ${TEMPLATES_DIR}/fonts --input datafile=${dataFilename} ${TEMPLATES_DIR}/main.typ ${outPath}`.quiet();
+    // Use --root / so Typst can access both templates (source) and /tmp (data/output)
+    const result = await Bun.$`typst compile --root / --font-path ${TEMPLATES_DIR}/fonts --input datafile=${dataPath} ${TEMPLATES_DIR}/main.typ ${outPath}`.quiet();
 
     if (result.exitCode !== 0) {
       throw new Error(`Typst compilation failed: ${result.stderr.toString()}`);
@@ -47,7 +49,9 @@ export async function renderPdf(data: ReportData): Promise<Buffer> {
     return Buffer.from(pdfBytes);
   } finally {
     for (const p of [dataPath, outPath]) {
-      try { await unlink(p); } catch {}
+      try { await unlink(p); } catch (e: any) {
+        if (e?.code !== "ENOENT") console.warn(`Failed to clean up ${p}:`, e);
+      }
     }
     release();
   }
