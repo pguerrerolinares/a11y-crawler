@@ -126,7 +126,7 @@ export const CRITERION_META: Record<string, CriterionMeta> = {
   // Perceivable — Level A
   "1.1.1": { name: "Non-text Content", level: "A" },
   "1.2.1": { name: "Audio-only and Video-only (Prerecorded)", level: "A" },
-  "1.2.2": { name: "Captions (Prerecorded)", level: "AA" },
+  "1.2.2": { name: "Captions (Prerecorded)", level: "A" },
   "1.2.3": { name: "Audio Description or Media Alternative (Prerecorded)", level: "A" },
   "1.3.1": { name: "Info and Relationships", level: "A" },
   "1.3.2": { name: "Meaningful Sequence", level: "A" },
@@ -208,10 +208,10 @@ export const CRITERION_META: Record<string, CriterionMeta> = {
   "3.1.2": { name: "Language of Parts", level: "AA" },
   "3.2.3": { name: "Consistent Navigation", level: "AA" },
   "3.2.4": { name: "Consistent Identification", level: "AA" },
-  "3.2.6": { name: "Consistent Help", level: "AA" },
+  "3.2.6": { name: "Consistent Help", level: "A" },
   "3.3.3": { name: "Error Suggestion", level: "AA" },
   "3.3.4": { name: "Error Prevention (Legal, Financial, Data)", level: "AA" },
-  "3.3.7": { name: "Redundant Entry", level: "AA" },
+  "3.3.7": { name: "Redundant Entry", level: "A" },
   "3.3.8": { name: "Accessible Authentication (Minimum)", level: "AA" },
 
   // Understandable — Level AAA
