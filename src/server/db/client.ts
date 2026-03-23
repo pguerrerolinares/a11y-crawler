@@ -70,4 +70,19 @@ async function runMigrations(conn: InstanceType<typeof SQL>) {
     });
     console.log("Migration v4-pipeline-columns applied");
   }
+
+  if (!appliedSet.has("report-columns")) {
+    console.log("Running migration: report-columns");
+    await conn.begin(async (tx) => {
+      // Clean slate — no production data to preserve
+      await tx.unsafe(`TRUNCATE audits CASCADE`);
+      // Add new columns (fresh table, no backfill needed)
+      await tx.unsafe(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS report_category TEXT NOT NULL DEFAULT 'uncategorized'`);
+      await tx.unsafe(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS wcag_criterion TEXT NOT NULL DEFAULT ''`);
+      // Index for report queries
+      await tx.unsafe(`CREATE INDEX IF NOT EXISTS idx_issues_report_category ON issues(audit_id, report_category)`);
+      await tx.unsafe(`INSERT INTO migrations (id) VALUES ('report-columns')`);
+    });
+    console.log("Migration report-columns applied");
+  }
 }
