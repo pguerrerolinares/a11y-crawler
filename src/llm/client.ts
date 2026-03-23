@@ -261,13 +261,14 @@ export function extractJsonFromLlm(text: string): unknown | null {
  */
 export function buildMultimodalMessage(
   text: string,
-  images: string[], // base64 PNG strings
+  images: string[], // base64 image strings
+  mimeType: "image/png" | "image/jpeg" = "image/jpeg",
 ): OpenAI.ChatCompletionMessageParam {
   const content: OpenAI.ChatCompletionContentPart[] = [
     { type: "text", text },
     ...images.map((b64): OpenAI.ChatCompletionContentPart => ({
       type: "image_url",
-      image_url: { url: `data:image/png;base64,${b64}` },
+      image_url: { url: `data:${mimeType};base64,${b64}` },
     })),
   ];
   return { role: "user", content };

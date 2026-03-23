@@ -15,8 +15,8 @@ export type CvdDeficiency = "deuteranopia" | "achromatopsia";
 export interface CvdDiffResult {
   deficiency: CvdDeficiency;
   diffPercent: number;
-  normalPng: Buffer;
-  cvdPng: Buffer;
+  normalImg: Buffer;
+  cvdImg: Buffer;
   diffBox: DiffBoundingBox | null;
 }
 
@@ -65,7 +65,7 @@ export async function cvdScreenshotDiff(page: Page): Promise<CvdDiffResult[]> {
   const { default: sharp } = await import("sharp");
   const results: CvdDiffResult[] = [];
 
-  const normalShot = await page.screenshot({ type: "png", fullPage: false });
+  const normalShot = await page.screenshot({ type: "jpeg", quality: 80, fullPage: false });
   const DIFF_WIDTH = 640;
   const DIFF_HEIGHT = 360;
   const { data: normalRaw } = await sharp(normalShot)
@@ -79,7 +79,7 @@ export async function cvdScreenshotDiff(page: Page): Promise<CvdDiffResult[]> {
     for (const deficiency of deficiencies) {
       try {
         await client.send("Emulation.setEmulatedVisionDeficiency", { type: deficiency });
-        const cvdShot = await page.screenshot({ type: "png", fullPage: false });
+        const cvdShot = await page.screenshot({ type: "jpeg", quality: 80, fullPage: false });
         await client.send("Emulation.setEmulatedVisionDeficiency", { type: "none" });
 
         const { data: cvdRaw } = await sharp(cvdShot)
@@ -98,7 +98,7 @@ export async function cvdScreenshotDiff(page: Page): Promise<CvdDiffResult[]> {
             height: Math.min(720, Math.ceil(diffBoxSmall.height * scaleY) + PAD * 2),
           };
         }
-        results.push({ deficiency, diffPercent, normalPng: normalShot, cvdPng: cvdShot, diffBox });
+        results.push({ deficiency, diffPercent, normalImg: normalShot, cvdImg: cvdShot, diffBox });
       } catch (err) {
         console.warn(`CVD simulation (${deficiency}) failed:`, err instanceof Error ? err.message : err);
         await client.send("Emulation.setEmulatedVisionDeficiency", { type: "none" }).catch(() => {});

@@ -46,7 +46,7 @@ describe("buildMultimodalMessage", () => {
     expect(content).toHaveLength(3);
     expect(content[0].type).toBe("text");
     expect(content[1].type).toBe("image_url");
-    expect(content[1].image_url.url).toContain("data:image/png;base64,abc123");
-    expect(content[2].image_url.url).toContain("data:image/png;base64,def456");
+    expect(content[1].image_url.url).toContain("data:image/jpeg;base64,abc123");
+    expect(content[2].image_url.url).toContain("data:image/jpeg;base64,def456");
   });
 });

@@ -113,8 +113,8 @@ function isLlmColorAnalysis(v: unknown): v is LlmColorAnalysis {
 }
 
 async function tier3LlmVisionConfirmation(
-  normalPng: Buffer,
-  cvdPng: Buffer,
+  normalImg: Buffer,
+  cvdImg: Buffer,
   llmClient: LLMClient,
   deficiency: string,
   diffBox: DiffBoundingBox | null = null,
@@ -122,15 +122,15 @@ async function tier3LlmVisionConfirmation(
 ): Promise<LlmColorAnalysis | null> {
   const { default: sharp } = await import("sharp");
 
-  let img1 = sharp(normalPng);
-  let img2 = sharp(cvdPng);
+  let img1 = sharp(normalImg);
+  let img2 = sharp(cvdImg);
   if (diffBox) {
     const extract = { left: diffBox.x, top: diffBox.y, width: diffBox.width, height: diffBox.height };
     img1 = img1.extract(extract);
     img2 = img2.extract(extract);
   }
-  const resized1 = await img1.resize(400, null, { withoutEnlargement: true }).png().toBuffer();
-  const resized2 = await img2.resize(400, null, { withoutEnlargement: true }).png().toBuffer();
+  const resized1 = await img1.resize(400, null, { withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer();
+  const resized2 = await img2.resize(400, null, { withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer();
 
   const b64Normal = resized1.toString("base64");
   const b64Cvd = resized2.toString("base64");
@@ -209,19 +209,6 @@ export async function testColorUse(
       }
     }
 
-    // Write screenshots to disk (eliminates buffer memory overhead)
-    if (screenshotDir && templatePrefix) {
-      const { join } = await import("node:path");
-      for (const r of cvdResults) {
-        if (r.diffPercent <= 5) continue;
-        const normalPath = join(screenshotDir, `${templatePrefix}-${r.deficiency}-normal.png`);
-        const cvdPath = join(screenshotDir, `${templatePrefix}-${r.deficiency}-cvd.png`);
-        await Bun.write(normalPath, r.normalPng);
-        await Bun.write(cvdPath, r.cvdPng);
-        screenshots.push({ deficiency: r.deficiency, normalPath, cvdPath });
-      }
-    }
-
     // Report high CVD diff as informational even without LLM
     if (bestResult && bestResult.diffPercent > 5) {
       const cvdIssue = makeColorIssue(url, "color-use-cvd", "moderate",
@@ -230,31 +217,49 @@ export async function testColorUse(
       issues.push(cvdIssue);
       cvdIssuesFromTier2And3.push(cvdIssue);
     }
+
+    // Run disk write and LLM vision in parallel (optimization: don't wait for disk before LLM)
+    const diskWritePromise = (async () => {
+      if (screenshotDir && templatePrefix) {
+        const { join } = await import("node:path");
+        for (const r of cvdResults) {
+          if (r.diffPercent <= 5) continue;
+          const normalPath = join(screenshotDir, `${templatePrefix}-${r.deficiency}-normal.jpg`);
+          const cvdPath = join(screenshotDir, `${templatePrefix}-${r.deficiency}-cvd.jpg`);
+          await Bun.write(normalPath, r.normalImg);
+          await Bun.write(cvdPath, r.cvdImg);
+          screenshots.push({ deficiency: r.deficiency, normalPath, cvdPath });
+        }
+      }
+    })();
+
+    const llmPromise = (async () => {
+      if (bestResult && bestResult.diffPercent > 0.5 && llmClient?.hasVision) {
+        try {
+          const tier1Context = issues
+            .filter(i => i.rule.startsWith("color-use-"))
+            .map(i => i.description.slice(0, 120));
+
+          const analysis = await tier3LlmVisionConfirmation(
+            bestResult.normalImg, bestResult.cvdImg, llmClient, bestResult.deficiency,
+            bestResult.diffBox, tier1Context,
+          );
+          if (analysis?.hasViolation) {
+            const llmIssue = makeColorIssue(url, "color-use-llm", analysis.confidence === "high" ? "serious" : "moderate",
+              `LLM analysis (${analysis.confidence} confidence): ${analysis.explanation}. Affected: ${analysis.elements.join(", ")} (WCAG 1.4.1)`,
+              "html", analysis.confidence);
+            issues.push(llmIssue);
+            cvdIssuesFromTier2And3.push(llmIssue);
+          }
+        } catch (err) {
+          console.warn("LLM vision analysis failed:", err instanceof Error ? err.message : err);
+        }
+      }
+    })();
+
+    await Promise.all([diskWritePromise, llmPromise]);
   } catch {
     return { issues, screenshots };
-  }
-
-  // Tier 3: LLM vision confirmation (only if diff exceeds threshold)
-  if (bestResult && bestResult.diffPercent > 0.5 && llmClient?.hasVision) {
-    try {
-      const tier1Context = issues
-        .filter(i => i.rule.startsWith("color-use-"))
-        .map(i => i.description.slice(0, 120));
-
-      const analysis = await tier3LlmVisionConfirmation(
-        bestResult.normalPng, bestResult.cvdPng, llmClient, bestResult.deficiency,
-        bestResult.diffBox, tier1Context,
-      );
-      if (analysis?.hasViolation) {
-        const llmIssue = makeColorIssue(url, "color-use-llm", analysis.confidence === "high" ? "serious" : "moderate",
-          `LLM analysis (${analysis.confidence} confidence): ${analysis.explanation}. Affected: ${analysis.elements.join(", ")} (WCAG 1.4.1)`,
-          "html", analysis.confidence);
-        issues.push(llmIssue);
-        cvdIssuesFromTier2And3.push(llmIssue);
-      }
-    } catch (err) {
-      console.warn("LLM vision analysis failed:", err instanceof Error ? err.message : err);
-    }
   }
 
   // Cache Tier 2+3 results for this CSS fingerprint

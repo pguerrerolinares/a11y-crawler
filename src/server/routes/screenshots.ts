@@ -25,7 +25,7 @@ export async function handleScreenshots(req: Request, url: URL): Promise<Respons
 
 async function serveScreenshot(auditId: string, filename: string): Promise<Response> {
   // Validate filename (prevent path traversal)
-  if (!/^[\w-]+\.png$/.test(filename)) {
+  if (!/^[\w-]+\.(png|jpg)$/.test(filename)) {
     return new Response("Invalid filename", { status: 400 });
   }
 
@@ -41,14 +41,17 @@ async function serveScreenshot(auditId: string, filename: string): Promise<Respo
   }
 
   return new Response(file, {
-    headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" },
+    headers: {
+      "Content-Type": filename.endsWith(".jpg") ? "image/jpeg" : "image/png",
+      "Cache-Control": "public, max-age=86400",
+    },
   });
 }
 
 async function listScreenshots(auditId: string): Promise<Response> {
   const dir = join(reportsDir, auditId, "screenshots");
   try {
-    const glob = new Bun.Glob("*.png");
+    const glob = new Bun.Glob("*.{png,jpg}");
     const files: string[] = [];
     for await (const file of glob.scan({ cwd: dir })) {
       files.push(file);
