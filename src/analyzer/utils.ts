@@ -32,6 +32,10 @@ export const WCAG_CRITERION_SLUGS: Record<string, string> = {
   "3.3.1": "error-identification",
   "3.3.3": "error-suggestion",
   "1.4.11": "non-text-contrast",
+  "1.4.1": "use-of-color",
+  "1.4.13": "content-on-hover-or-focus",
+  "4.1.2": "name-role-value",
+  "2.1.1": "keyboard",
 };
 
 export function wcagCriterionToSlug(criterion: string): string {
@@ -49,6 +53,11 @@ export function makeWcagIssue(
   selector: string,
   wcagCriterion?: string,
   violationCategory: ViolationCategory = "structural",
+  opts?: {
+    checkSource?: Issue["checkSource"];
+    llmConfidence?: "high" | "medium" | "low" | null;
+    help?: string;
+  },
 ): Issue {
   return {
     id: crypto.randomUUID(),
@@ -56,7 +65,7 @@ export function makeWcagIssue(
     rule,
     impact,
     description,
-    help: description,
+    help: opts?.help ?? description,
     helpUrl: wcagCriterion
       ? `https://www.w3.org/WAI/WCAG22/Understanding/${wcagCriterionToSlug(wcagCriterion)}`
       : "",
@@ -67,10 +76,10 @@ export function makeWcagIssue(
     xpath: "",
     viewportWidth: 0,
     pageTitle: "",
-    checkSource: "wcag-custom",
+    checkSource: opts?.checkSource ?? "wcag-custom",
     suggestedFix: null,
     fixConfidence: null,
-    llmConfidence: null,
+    llmConfidence: opts?.llmConfidence ?? null,
     wcagCriterion: wcagCriterion ?? null,
     violationCategory,
   };

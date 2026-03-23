@@ -4,6 +4,7 @@ import type { ElementManifest, InteractionResult, PopupInfo } from "../types/man
 import type { TierTimer } from "./tier-timer";
 import { adaptiveWait, disableAnimations } from "./adaptive-wait";
 import { parseRgba, alphaBlend, relativeLuminance, contrastRatio } from "../analyzer/contrast";
+import { makeWcagIssue } from "../analyzer/utils";
 
 export function isNativeInteractive(tag: string): boolean {
   return ["a", "button", "input", "select", "textarea", "details", "summary"].includes(tag);
@@ -17,28 +18,9 @@ function makeIssue(
   wcagCriterion: string,
   impact: Issue["impact"] = "serious",
 ): Issue {
-  return {
-    id: `${rule}-${selector}-${Date.now()}`,
-    url,
-    rule,
-    impact,
-    description,
-    help: description,
-    helpUrl: `https://www.w3.org/WAI/WCAG22/Understanding/${wcagCriterion.replace(".", "")}`,
-    wcagTags: [wcagCriterion],
-    selector,
-    html: "",
-    surroundingHtml: "",
-    xpath: "",
-    viewportWidth: 1280,
-    pageTitle: "",
+  return makeWcagIssue(url, rule, impact, description, selector, wcagCriterion, "interactive", {
     checkSource: "interactive",
-    suggestedFix: null,
-    fixConfidence: null,
-    llmConfidence: null,
-    wcagCriterion,
-    violationCategory: "interactive",
-  };
+  });
 }
 
 function resolveColor(

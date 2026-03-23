@@ -3,6 +3,7 @@ import type { Page } from "playwright";
 import type { Issue } from "../types/issue";
 import type { LLMClient } from "../llm/client";
 import { buildMultimodalMessage, extractJsonFromLlm } from "../llm/client";
+import { makeWcagIssue } from "./utils";
 
 // Subset of CDP VisionDeficiency enum used here
 type CvdDeficiency = "deuteranopia" | "achromatopsia";
@@ -11,18 +12,11 @@ function makeColorIssue(
   url: string, rule: string, impact: "critical" | "serious" | "moderate" | "minor",
   description: string, selector: string, confidence: "high" | "medium" | "low" | null,
 ): Issue {
-  return {
-    id: crypto.randomUUID(), url, rule, impact, description,
-    help: "Color must not be the only visual means of conveying information.",
-    helpUrl: "https://www.w3.org/WAI/WCAG22/Understanding/use-of-color",
-    wcagTags: ["wcag141"],
-    selector, html: "", surroundingHtml: "", xpath: "",
-    viewportWidth: 1280, pageTitle: "",
+  return makeWcagIssue(url, rule, impact, description, selector, "1.4.1", "visual", {
     checkSource: confidence ? "llm-vision" : "wcag-custom",
-    suggestedFix: null, fixConfidence: null,
-    llmConfidence: confidence, wcagCriterion: "1.4.1",
-    violationCategory: "visual",
-  };
+    llmConfidence: confidence,
+    help: "Color must not be the only visual means of conveying information.",
+  });
 }
 
 /**
