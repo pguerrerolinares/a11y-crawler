@@ -15,8 +15,18 @@ import { getCached, setCached, getTtlForPath } from "./middleware/cache.ts";
 
 const env = validateEnv();
 
-await initDb();
-console.log("Database initialized");
+// Retry DB init with backoff — Coolify may take a moment to attach the network
+for (let attempt = 1; attempt <= 10; attempt++) {
+  try {
+    await initDb();
+    console.log("Database initialized");
+    break;
+  } catch (err) {
+    console.warn(`DB init attempt ${attempt}/10 failed:`, err instanceof Error ? err.message : err);
+    if (attempt === 10) throw err;
+    await new Promise(r => setTimeout(r, attempt * 2000));
+  }
+}
 
 mkdirSync(env.REPORTS_DIR, { recursive: true });
 console.log(`Reports directory: ${env.REPORTS_DIR}`);
