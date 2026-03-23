@@ -1,5 +1,7 @@
 import { getWorkerDb, json } from "./db";
 import type { SpanRecord, PageCapabilities } from "../types/pipeline";
+import { getReportCategory } from "../reporter/wcag-metadata";
+import { extractWcagCriterion } from "../server/utils/wcag.ts";
 
 /**
  * Persist observability spans for an audit.
@@ -90,23 +92,30 @@ export async function insertIssuesV4(
     templateId?: string | null;
     affectedPages?: number;
     amplifiedFrom?: string | null;
+    wcagCriterion?: string | null;
   }>,
 ): Promise<void> {
   if (issues.length === 0) return;
   const db = getWorkerDb();
   for (const i of issues) {
+    const reportCategory = getReportCategory(i.rule);
+    const wcagCriterion = i.wcagCriterion
+      ?? extractWcagCriterion(i.wcagTags, i.rule)
+      ?? "";
     await db`
       INSERT INTO issues
         (audit_id, page_id, rule, impact, description, help, help_url,
          wcag_tags, selector, html, xpath, check_source, category,
-         suggested_fix, fix_confidence, template_id, affected_pages, amplified_from)
+         suggested_fix, fix_confidence, template_id, affected_pages, amplified_from,
+         report_category, wcag_criterion)
       VALUES
         (${auditId}, ${pageId}, ${i.rule}, ${i.impact},
          ${i.description ?? ""}, ${i.help ?? ""}, ${i.helpUrl ?? ""},
          ${json(i.wcagTags ?? [])}, ${i.selector ?? ""}, ${i.html ?? ""},
          ${i.xpath ?? ""}, ${i.checkSource}, ${i.category ?? "structural"},
          ${i.suggestedFix ?? ""}, ${i.fixConfidence ?? null},
-         ${i.templateId ?? null}, ${i.affectedPages ?? 1}, ${i.amplifiedFrom ?? null})
+         ${i.templateId ?? null}, ${i.affectedPages ?? 1}, ${i.amplifiedFrom ?? null},
+         ${reportCategory}, ${wcagCriterion})
     `;
   }
 }

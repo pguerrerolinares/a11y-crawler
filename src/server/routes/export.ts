@@ -1,9 +1,7 @@
 import { getDb } from "../db/client.ts";
-import { join, resolve } from "node:path";
-import { existsSync } from "node:fs";
 import { extractWcagCriterion } from "../utils/wcag.ts";
-
-const reportsDir = process.env.REPORTS_DIR || "./reports";
+import { buildReportData } from "../../reporter/report-data";
+import { renderPdf } from "../../reporter/typst-renderer";
 
 export async function handleExport(req: Request, url: URL): Promise<Response> {
   if (req.method !== "GET") {
@@ -29,7 +27,7 @@ export async function handleExport(req: Request, url: URL): Promise<Response> {
   }
 
   if (format === "csv") return exportCsv(auditId);
-  if (format === "pdf") return exportPdf(auditId);
+  if (format === "pdf") return exportPdf(auditId, url);
 
   return Response.json({ error: "Not Found" }, { status: 404 });
 }
@@ -111,30 +109,30 @@ async function exportCsv(auditId: string): Promise<Response> {
   });
 }
 
-async function exportPdf(auditId: string): Promise<Response> {
-  const pdfPath = join(reportsDir, `${auditId}.pdf`);
-
-  const resolved = resolve(pdfPath);
-  if (!resolved.startsWith(resolve(reportsDir))) {
-    return Response.json({ error: "Invalid path" }, { status: 400 });
+async function exportPdf(auditId: string, url: URL): Promise<Response> {
+  const detailParam = url.searchParams.get("detail") ?? "standard";
+  if (!["standard", "full"].includes(detailParam)) {
+    return Response.json({ error: "Invalid detail level. Use 'standard' or 'full'" }, { status: 400 });
   }
+  const detail = detailParam as "standard" | "full";
 
-  if (!existsSync(pdfPath)) {
-    return Response.json(
-      { error: "PDF not available. It is generated after the crawl completes." },
-      { status: 404 },
-    );
+  try {
+    const reportData = await buildReportData(auditId, detail);
+    const pdfBuffer = await renderPdf(reportData);
+
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `audit-${auditId.slice(0, 8)}-${date}-${detail}.pdf`;
+
+    return new Response(pdfBuffer, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    });
+  } catch (err) {
+    console.error("PDF generation failed:", err);
+    return Response.json({ error: "PDF generation failed" }, { status: 500 });
   }
-
-  const file = Bun.file(pdfPath);
-  const filename = `audit-${auditId.slice(0, 8)}.pdf`;
-
-  return new Response(file, {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-    },
-  });
 }
 
 /** Escape a CSV field value: prefix dangerous leading characters, wrap in quotes if needed. */
