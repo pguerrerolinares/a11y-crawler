@@ -89,17 +89,18 @@ flowchart TD
 
     P2 --> P3
 
-    subgraph P3["PHASE 3 — PROBE (1 slot secuencial)"]
-        PR1[Solo representantes\ntípicamente 5-15 de 50-100 páginas]
-        PR2[page.goto load\ntodos los recursos]
-        PR3[Cookie blocking\niguales capas que SCAN]
-        PR4[runAxe completo\nwcag2a + wcag2aa + wcag22aa]
-        PR5[8 nuevos tests WCAG]
-        PR6[runInteractiveTests\nexistentes]
-        PR7[Amplificar issues\ntemplate-level → todo el cluster]
-        PR8[SlotPool.release\nreciclar cada 5 páginas]
-        PR1 --> PR2 --> PR3 --> PR4 --> PR5 --> PR6 --> PR7 --> PR8
-        PR8 -->|más representantes| PR1
+    subgraph P3["PHASE 3 — PROBE (4-phase per template)"]
+        PR1[Solo representantes\ntípicamente 5-25 de 30-100 páginas]
+        PR2[page.goto domcontentloaded\ntimeout 30s]
+        PR3[Cookie blocking + Consent prehide CSS]
+        PR4[Tier 0: Element Manifest\ncollectManifest + groupByFingerprint]
+        PR5["Phase 1: Static\nTier 1 CSSOM + axe-full + 8 evaluate tests"]
+        PR6["Phase 2: Interaction\nTier 2 batched hover/focus/keyboard"]
+        PR7["Phase 3: Viewport\nreflow + resize-text + text-spacing"]
+        PR8["Phase 4: Capture\nCVD screenshots + status messages + Tier 3 queue"]
+        PR9[Amplificar issues\ntemplate-level → todo el cluster]
+        PR1 --> PR2 --> PR3 --> PR4 --> PR5 --> PR6 --> PR7 --> PR8 --> PR9
+        PR9 -->|más representantes| PR1
     end
 
     P3 --> Post
@@ -213,36 +214,49 @@ flowchart TD
 
 ---
 
-## Phase 3 — PROBE (Detalle)
+## Phase 3 — PROBE (Detalle: 4-phase architecture)
+
+> Actualizado: v7.3 (2026-03-23). Legacy single-pass probe eliminado.
+> Orquestador: `src/worker/probe.ts` (412 líneas).
 
 ```mermaid
 flowchart TD
-    Representatives[Representantes\nmáx 25] --> ProbeSlot[ContextSlot\nreciclar cada 5 páginas]
+    Representatives["Representantes (máx 25)"] --> Navigate["page.goto domcontentloaded\ntimeout 30s + consent prehide CSS"]
+    Navigate --> Tier0["Tier 0: Element Manifest\ncollectManifest + groupByFingerprint"]
+    Tier0 --> Phase1
 
-    ProbeSlot --> Navigate[page.goto load\ntodos los recursos\ntimeout 30s]
-    Navigate --> CookieBlock[Cookie blocking\nmismas 2 capas]
-    CookieBlock --> AxeFull[runAxe completo\nwcag2a + wcag2aa + wcag22aa]
-    AxeFull --> NewTests
-
-    subgraph NewTests["8 Nuevos Tests WCAG 2.2 AA"]
-        subgraph TierA["Tier A — v4.0"]
-            T1[Reflow 320px\nsin scroll horizontal]
-            T2[Text Spacing\nline-height/letter-spacing override]
-            T3[Resize Text 200%\nsin overflow]
-        end
-        subgraph TierB["Tier B — v4.1"]
-            T4[Non-text Contrast 3:1\nborders + iconos]
-            T5[Multimedia\naudio-description, captions]
-            T6[Timed Events\nauto-refresh detection]
-        end
-        subgraph TierC["Tier C — v4.2"]
-            T7[Error Identification\nempty form submit]
-            T8[Target Size 24×24px\nbotones pequeños]
-        end
+    subgraph Phase1["Phase 1 — Static (no DOM mutation)"]
+        P1T1["Tier 1: CSSOM hover/focus contrast\n→ promotes elements to Tier 2"]
+        P1AXE["axe-core full (cached)"]
+        P1EVAL["Parallel evaluate tests:\ntargetSize, multimedia, timedEvents,\nnonTextContrast, meaningfulSequence,\nsemanticStructure, legalA11y, errorId"]
+        P1LLM["sensoryInstructions (LLM text)"]
     end
 
-    NewTests --> InteractiveTests[runInteractiveTests\ntab order, focus\nkeyboard traps, skip nav]
-    InteractiveTests --> Amplify
+    Phase1 --> Phase2
+
+    subgraph Phase2["Phase 2 — Interaction (DOM mutation)"]
+        P2T2["Tier 2: batched hover/focus/keyboard\n(1 page.evaluate per element)\n→ promotes elements to Tier 3"]
+        P2INT["Interactive tests:\nskip-nav, focus-visible, focus-order"]
+        P2ANIM["enableAnimations (reset for Phase 3/4)"]
+    end
+
+    Phase2 --> Phase3
+
+    subgraph Phase3["Phase 3 — Viewport (viewport mutation)"]
+        P3R["testReflow (320px)"]
+        P3RS["testResizeText (200% zoom)"]
+        P3TS["testTextSpacing (spacing override)"]
+    end
+
+    Phase3 --> Phase4
+
+    subgraph Phase4["Phase 4 — Capture (visual evidence)"]
+        P4RESET["Viewport reset 1280×720"]
+        P4PAR["Promise.all:\ntestColorUse (CVD screenshots + LLM vision)\ntestStatusMessages (MutationObserver)"]
+        P4T3["Insert Tier 3 async LLM jobs"]
+    end
+
+    Phase4 --> Amplify
 
     subgraph Amplify["Amplificación de issues"]
         AM1{Tipo de issue}
@@ -322,6 +336,19 @@ sequenceDiagram
 
 **SCAN:** 3 slots concurrentes, recycle cada 25 páginas (~150MB liberados por recycle)
 **PROBE:** 1 slot secuencial, recycle cada 5 páginas (páginas más pesadas con full load)
+
+---
+
+## Worker DB — Módulos (v7.3)
+
+> `db.ts` monolítico (450 líneas, 24 exports) dividido en 4 módulos por dominio:
+
+| Módulo | Responsabilidad |
+|--------|----------------|
+| `db.ts` (67 LOC) | Conexión PostgreSQL, migraciones, `getWorkerDb()` |
+| `db-audit.ts` (137 LOC) | Ciclo de vida: claimNextAudit, markAudit*, emitAuditEvent, getIssueCountsByImpact |
+| `db-pages.ts` (182 LOC) | Persistencia: insertPageV4, insertIssuesV4, persistSpans, getPreviousAudit, regression |
+| `db-tier3.ts` (78 LOC) | Cola LLM async: insertTier3Job, claimNext, complete/fail, cache lookup/set |
 
 ---
 

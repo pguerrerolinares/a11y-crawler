@@ -50,15 +50,13 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 
 ## LOW — Improvements
 
-### LOW-1: Selector builder duplicado en 7+ archivos
-- **Archivos:** Todos los `wcag-*.ts` dentro de `page.evaluate()`
-- **Issue:** El pattern `el.id ? '#'+id : tag+'.'+classes : tag` está copy-pasted. `buildCssSelector` de `utils.ts` no puede usarse en browser context.
-- **Fix:** Aceptar la duplicación con comentario apuntando a la versión canónica, o crear un helper inyectable como string.
+### ~~LOW-1: Selector builder duplicado en 7+ archivos~~ ✅ CERRADO (v7.3)
+- **Estado:** ACEPTADO como limitación arquitectónica de Playwright.
+- **Análisis:** `buildCssSelector` existe como versión canónica en `utils.ts` (Node context). Las ~15 copias en `page.evaluate()` (browser context) no pueden importar módulos Node. Inyectar como string pierde tipado TypeScript y reduce legibilidad.
+- **Decisión:** Aceptar duplicación en browser context (opción B del análisis). No merece la complejidad por -50 LOC.
 
-### LOW-2: `computeKendallTau` exportado pero duplicado en browser context
-- **Archivo:** `src/analyzer/wcag-meaningful-sequence.ts:28-42`
-- **Issue:** La función exportada solo se usa en tests. La versión de producción vive dentro de `page.evaluate()`.
-- **Fix:** Documentar con JSDoc: `/** Exported for unit testing only */`.
+### ~~LOW-2: `computeKendallTau` exportado pero duplicado en browser context~~ ✅ CERRADO (v7.3)
+- **Estado:** Misma decisión que LOW-1 — duplicación browser context aceptada. La función exportada solo se usa en tests; la versión de producción vive dentro de `page.evaluate()`.
 
 ### LOW-3: `isNativeTitle` siempre false en hover-focus
 - **Archivo:** `src/analyzer/wcag-hover-focus.ts:52,64`
@@ -163,5 +161,30 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 
 ---
 
-## Fecha: 2026-03-19
+---
+
+## Refactoring v7.3 (2026-03-23)
+
+### Completado:
+
+| Cambio | Impacto |
+|--------|---------|
+| Eliminar 8 tests stub/rotos (stubs `typeof`, placeholders, integración sin servidor) | Suite limpia: 252 pass, 0 fail (antes 273 pass, 16 fail) |
+| Eliminar legacy probe path (`runProbeLegacy` + flag `PROBE_V2`) | probe.ts 535 → 412 líneas (-23%) |
+| Eliminar funciones v3 DB dead code (`insertPage`, `insertIssues`) | db.ts 519 → 450 líneas |
+| Unificar issue factories → `makeWcagIssue` con opts | 3 bugs arreglados en tier2 (helpUrl sin slug, wcagTags sin formato, id no-UUID) |
+| Split db.ts monolítico → db.ts + db-audit.ts + db-pages.ts + db-tier3.ts | Max archivo 182 LOC (antes 450) |
+| Extraer screenshot/CVD/pixel-diff → screenshot-cvd.ts | wcag-color-use.ts 421 → 266 líneas (-37%), utilities reutilizables |
+
+**Total: -512 LOC netas, 3 bugs arreglados, 2 monolitos divididos.**
+
+### No merece la pena (analizado y descartado):
+
+- **Split probe.ts en phase1-4.ts:** Las fases son funciones internas de 20-60 líneas, ya bien organizadas. 412 líneas es razonable para un orquestador.
+- **Extraer `buildCssSelector` / `isElementHidden` como inyectable:** Browser context (page.evaluate) no puede importar Node modules. Complejidad > beneficio.
+- **Extraer viewport save/restore:** Solo 2 ocurrencias de try/finally de 3 líneas.
+
+---
+
+## Fecha: 2026-03-19 (original) / 2026-03-23 (refactoring update)
 ## Source: Code review v4.3/v4.4 + comparativa Auditoria manual de referencia audit (verificado con audit bdb0087b)
