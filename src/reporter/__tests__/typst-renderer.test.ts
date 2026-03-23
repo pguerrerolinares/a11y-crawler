@@ -22,9 +22,9 @@ describe("renderPdf", () => {
     };
 
     const buffer = await renderPdf(sampleData as any);
-    expect(buffer).toBeInstanceOf(Buffer);
+    expect(buffer).toBeInstanceOf(Uint8Array);
     expect(buffer.length).toBeGreaterThan(0);
     // PDF magic bytes
-    expect(buffer.slice(0, 5).toString()).toBe("%PDF-");
+    expect(new TextDecoder().decode(buffer.slice(0, 5))).toBe("%PDF-");
   }, 30000);
 });

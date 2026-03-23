@@ -119,6 +119,29 @@ export const RULE_CATEGORY: Record<string, ReportCategory> = {
 
   // legal-compliance
   "accessibility-declaration-missing": "legal-compliance",
+
+  // visual-presentation rules (mapped to color-contrast as closest category)
+  "resize-text": "color-contrast",
+  "wcag-reflow": "color-contrast",
+  "wcag-text-spacing": "color-contrast",
+
+  // interactive-widgets rules (mapped to keyboard-navigation)
+  "target-size": "keyboard-navigation",
+  "wcag-target-size": "keyboard-navigation",
+  "pointer-gestures": "keyboard-navigation",
+
+  // table / data rules (mapped to structure-headings)
+  "td-headers-attr": "structure-headings",
+  "th-has-data-cells": "structure-headings",
+  "table-fake-caption": "structure-headings",
+  "scope-attr-valid": "structure-headings",
+
+  // error handling (mapped to forms-labels)
+  "wcag-error-identification": "forms-labels",
+  "wcag-legal-checks": "legal-compliance",
+
+  // state change contrast (mapped to color-contrast)
+  "wcag-state-change-contrast": "color-contrast",
 };
 
 // WCAG 2.2 criteria with name and conformance level

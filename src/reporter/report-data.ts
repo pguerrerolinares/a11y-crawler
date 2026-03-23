@@ -45,7 +45,7 @@ export interface ReportData {
     detailLevel: "standard" | "full";
   };
   score: {
-    value: number;
+    value: number | null;
     totalIssues: number;
     totalPages: number;
     issuesByImpact: Record<string, number>;
@@ -73,7 +73,10 @@ export interface IssueRow {
  * as pass or fail based on the issueCounts map.
  */
 export function buildComplianceTable(issueCounts: Map<string, number>): ComplianceRow[] {
-  const rows: ComplianceRow[] = Object.entries(CRITERION_META).map(([criterion, meta]) => {
+  // Only include A and AA criteria — scanner targets AA, showing AAA as "pass" is misleading
+  const rows: ComplianceRow[] = Object.entries(CRITERION_META)
+    .filter(([, meta]) => meta.level !== "AAA")
+    .map(([criterion, meta]) => {
     const count = issueCounts.get(criterion) ?? 0;
     return {
       criterion,
@@ -152,7 +155,7 @@ export function groupByCategory(
 
       // First non-null suggested_fix, falling back to help
       const remediation =
-        criterionIssues.find(i => i.suggested_fix != null)?.suggested_fix ??
+        criterionIssues.find(i => i.suggested_fix != null && i.suggested_fix !== "")?.suggested_fix ??
         criterionIssues[0].help;
 
       const finding: Finding = {
@@ -193,6 +196,49 @@ export function groupByCategory(
       id: categoryId,
       name: categoryMeta.name,
       description: categoryMeta.description,
+      findings,
+    });
+  }
+
+  // Catch-all: any issues with report_category not in CATEGORY_META
+  const uncategorized = byCategoryByCriterion.get("uncategorized");
+  if (uncategorized && uncategorized.size > 0) {
+    const findings: Finding[] = [];
+    for (const [criterion, criterionIssues] of uncategorized) {
+      const meta = CRITERION_META[criterion];
+      const affectedPages = [...new Set(criterionIssues.map(i => i.url))];
+      const descCounts = new Map<string, number>();
+      for (const issue of criterionIssues) {
+        descCounts.set(issue.description, (descCounts.get(issue.description) ?? 0) + 1);
+      }
+      let mostCommonDesc = criterionIssues[0].description;
+      let maxCount = 0;
+      for (const [desc, count] of descCounts) {
+        if (count > maxCount) { maxCount = count; mostCommonDesc = desc; }
+      }
+      const remediation =
+        criterionIssues.find(i => i.suggested_fix != null && i.suggested_fix !== "")?.suggested_fix ??
+        criterionIssues[0].help;
+      const finding: Finding = {
+        criterion,
+        controlName: meta?.name ?? criterion,
+        level: meta?.level ?? "AA",
+        status: "fail",
+        requirement: "",
+        finding: mostCommonDesc,
+        remediation,
+        affectedPages,
+        issueCount: criterionIssues.length,
+      };
+      if (detail === "full") {
+        finding.instances = criterionIssues.map(i => ({ url: i.url, selector: i.selector, html: i.html }));
+      }
+      findings.push(finding);
+    }
+    sections.push({
+      id: "uncategorized",
+      name: "Other Issues",
+      description: "Issues not classified into a specific thematic category.",
       findings,
     });
   }
@@ -262,14 +308,14 @@ export async function buildReportData(
   return {
     meta: {
       baseUrl: audit.url as string,
-      date: new Date().toISOString(),
+      date: new Date().toISOString().slice(0, 10),
       wcagLevel: "AA",
       toolVersions: { crawler: "7.3.0", axeCore: "4.11.1" },
       totalDurationSeconds: (audit.duration_seconds as number) ?? 0,
       detailLevel: detail,
     },
     score: {
-      value: (audit.wcag_score as number) ?? 100,
+      value: audit.wcag_score != null ? (audit.wcag_score as number) : null,
       totalIssues: issues.length,
       totalPages: analyzedUrls.length,
       issuesByImpact,

@@ -4,12 +4,16 @@
 
 #section-heading("Executive Summary")
 
-// Score
-#let score-color = if data.score.value > 80 { pass-color } else if data.score.value > 50 { moderate-color } else { fail-color }
-
+// Score — handle null (audit not fully completed)
 #align(center)[
-  #text(size: 48pt, weight: "bold", fill: score-color)[#str(data.score.value)]
-  #text(size: 14pt, fill: gray-500)[#" / 100 WCAG Score"]
+  #if data.score.value != none {
+    let score-color = if data.score.value > 80 { pass-color } else if data.score.value > 50 { moderate-color } else { fail-color }
+    text(size: 48pt, weight: "bold", fill: score-color)[#str(data.score.value)]
+    text(size: 14pt, fill: gray-500)[#" / 100 WCAG Score"]
+  } else {
+    text(size: 48pt, weight: "bold", fill: gray-500)[N/A]
+    text(size: 14pt, fill: gray-500)[#" WCAG Score (pending)"]
+  }
 ]
 
 #v(16pt)
