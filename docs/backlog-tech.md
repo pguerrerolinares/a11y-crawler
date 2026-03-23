@@ -56,15 +56,11 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 ### ~~LOW-2: `computeKendallTau` exportado pero duplicado en browser context~~ ✅ CERRADO (v7.3)
 - **Estado:** Misma decisión que LOW-1 — duplicación browser context aceptada. La función exportada solo se usa en tests; la versión de producción vive dentro de `page.evaluate()`.
 
-### LOW-3: `isNativeTitle` siempre false en hover-focus
-- **Archivo:** `src/analyzer/wcag-hover-focus.ts:52,64`
-- **Issue:** El campo existe pero siempre es `false`. El check `if (trigger.isNativeTitle) continue` es dead code.
-- **Fix:** Eliminar el campo y el check, o implementar detección real de `[title]` exempt.
+### ~~LOW-3: `isNativeTitle` siempre false en hover-focus~~ ✅ CERRADO (v7.3)
+- **Estado:** Eliminado en rewrite de wcag-hover-focus.ts. El nuevo `TriggerCandidate` no tiene el campo.
 
-### LOW-4: Consent banner selector duplicado entre utils.ts y consent-blocker.ts
-- **Archivos:** `src/analyzer/utils.ts`, `src/analyzer/consent-blocker.ts`
-- **Issue:** `CONSENT_BANNER_SELECTOR` en utils.ts es un subset manual de `CONSENT_PREHIDE_CSS` en consent-blocker.ts. Pueden divergir.
-- **Fix:** Generar `CONSENT_BANNER_SELECTOR` programáticamente desde `CONSENT_PREHIDE_CSS`, o mantener una sola fuente.
+### ~~LOW-4: Consent banner selector duplicado entre utils.ts y consent-blocker.ts~~ ✅ CERRADO (v7.3)
+- **Fix aplicado:** `CONSENT_BANNER_SELECTOR` en utils.ts ahora se genera programáticamente desde `CONSENT_PREHIDE_CSS` de consent-blocker.ts. Una sola fuente de verdad.
 
 ---
 
@@ -79,10 +75,8 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
   2. **Detección before/after:** Antes del `handle.hover()` (real mouse, activa CSS `:hover`), captura snapshot de visibilidad de children/siblings. Después compara: si algo pasó de oculto a visible, es un CSS-only popup. Se usa como fallback si MutationObserver no detecta nada.
 - **Impacto en performance:** Mínimo — el snapshot es un solo `page.evaluate()` antes del hover.
 
-### MEDIUM-13: `sensory-instructions` no detecta RM-13 (WCAG 1.3.3) en /formulario/
-- **Referencia Auditoria manual de referencia:** RM-13 — formulario con instrucciones implícitas que dependen del contexto visual (obligatoriedad por estilo/color)
-- **Issue:** `/formulario/` no aparece en las 33 URLs crawleadas. Puede ser una URL dinámica, protegida, o no enlazada desde la navegación principal.
-- **Fix:** Verificar si `/formulario/` es accesible públicamente. Si es alcanzable pero no descubierta, investigar por qué el crawler no la encontró (posible JS-only navigation o enlace condicional).
+### ~~MEDIUM-13: `sensory-instructions` no detecta RM-13 (WCAG 1.3.3) en /formulario/~~ WON'T FIX
+- **Estado:** Limitación de cobertura de crawling, no de detección. `testSensoryInstructions` funciona correctamente en las páginas que el crawler descubre. `/formulario/` no se crawlea (URL dinámica/JS-only/no enlazada). Para resolverlo se necesitaría soporte de seed URLs manuales o mejorar el crawler para JS navigation — ROI insuficiente para un edge-case.
 
 ---
 
@@ -154,10 +148,8 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 ### ~~MEDIUM-17: Tier 3 LLM podría recibir contexto textual + crop~~ ✅ CERRADO (v7)
 - **Fix:** Tier 1 DOM heuristic findings (element descriptions) passed as context in Tier 3 LLM prompt. LLM now receives: cropped diff region + list of suspected color-only elements to verify.
 
-### LOW-5: Template dedup no reduce ejecuciones de tests CSS-only
-- **Archivo:** `src/worker/probe.ts`
-- **Issue:** Tests como `state-change-contrast` que evalúan CSS (no contenido) se ejecutan en 32 URLs representativas, pero muchas comparten template CSS. Bastaría con 1 URL por template (25 en vez de 32) para tests que no dependen del contenido.
-- **Fix:** Marcar tests como `content-dependent` vs `style-dependent`. Para `style-dependent`, ejecutar solo en 1 URL por template. Requiere clasificación de tests.
+### ~~LOW-5: Template dedup no reduce ejecuciones de tests CSS-only~~ ✅ CERRADO (v7.3)
+- **Fix aplicado:** `viewportCache` en probe.ts — Phase 3 (reflow, resize-text, text-spacing) cachea resultados por CSS fingerprint (reutiliza `computeCssFingerprint` de screenshot-cvd.ts). Templates con mismos stylesheets reusan resultados. Mismo patrón que `cvdCache` de Phase 4.
 
 ---
 

@@ -85,11 +85,15 @@ export function makeWcagIssue(
   };
 }
 
-export const CONSENT_BANNER_SELECTOR = [
-  "#CybotCookiebotDialog", "#onetrust-banner-sdk", "#onetrust-consent-sdk",
-  "[id*='cookie-banner']", "[id*='cookie-consent']", "[id*='cookieConsent']",
-  "[class*='cookie-banner']", "[class*='cookie-consent']", "[class*='cookieConsent']",
-  "[id*='gdpr-banner']", "[class*='gdpr-banner']",
-  "[id*='consent-banner']", "[class*='consent-banner']",
-  "#cmpbox", "#cmpbox2", "#cmpwrapper", ".klaro",
-].join(", ");
+/**
+ * CSS selector matching known consent/cookie banner containers.
+ * Derived from CONSENT_PREHIDE_CSS in consent-blocker.ts to stay in sync.
+ */
+import { CONSENT_PREHIDE_CSS } from "./consent-blocker";
+
+export const CONSENT_BANNER_SELECTOR = CONSENT_PREHIDE_CSS
+  .replace(/\{[^}]+\}/g, "")  // remove CSS declarations
+  .split(",")
+  .map(s => s.trim())
+  .filter(s => s.length > 0)
+  .join(", ");

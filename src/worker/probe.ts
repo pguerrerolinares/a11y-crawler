@@ -24,6 +24,7 @@ import { runTier2 } from "./tier2";
 import { TierTimer } from "./tier-timer";
 import { enableAnimations } from "./adaptive-wait";
 import { join } from "node:path";
+import { computeCssFingerprint } from "../analyzer/screenshot-cvd";
 
 const TEMPLATE_LEVEL_RULES = new Set([
   "color-contrast", "color-contrast-enhanced", "heading-order",
@@ -64,6 +65,7 @@ export async function runProbePhase(
 ): Promise<void> {
   const probeCtx = new ProbeContextManager(getBrowser, config.probePagesPerContext);
   const cvdCache = new Map<string, { diffPercent: number; issues: Issue[] }>();
+  const viewportCache = new Map<string, Issue[]>();
 
   try {
     for (const cluster of templates) {
@@ -115,7 +117,7 @@ export async function runProbePhase(
 
             // ── Phase 3: Viewport — reflow, resize-text, text-spacing ──
             const p3Start = Date.now();
-            const phase3Issues = await runPhase3Viewport(page, url, cluster);
+            const phase3Issues = await runPhase3Viewport(page, url, cluster, viewportCache);
             allIssues.push(...phase3Issues);
             phaseTimings.phase3ViewportMs = Date.now() - p3Start;
 
@@ -298,7 +300,19 @@ async function runPhase3Viewport(
   page: Page,
   url: string,
   cluster: TemplateCluster,
+  viewportCache: Map<string, Issue[]>,
 ): Promise<Issue[]> {
+  const hasViewportTests = cluster.testPlan.includes("reflow") ||
+    cluster.testPlan.includes("resize-text") || cluster.testPlan.includes("text-spacing");
+  if (!hasViewportTests) return [];
+
+  // Viewport tests are style-dependent (CSS, not content).
+  // Skip if a template with the same CSS fingerprint was already tested.
+  const fingerprint = await computeCssFingerprint(page);
+  if (viewportCache.has(fingerprint)) {
+    return viewportCache.get(fingerprint)!.map(i => ({ ...i, url, id: crypto.randomUUID() }));
+  }
+
   const issues: Issue[] = [];
 
   if (cluster.testPlan.includes("reflow")) {
@@ -311,6 +325,7 @@ async function runPhase3Viewport(
     issues.push(...await testTextSpacing(page, url));
   }
 
+  viewportCache.set(fingerprint, issues);
   return issues;
 }
 
