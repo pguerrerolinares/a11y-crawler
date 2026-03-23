@@ -12,15 +12,6 @@ export async function initWorkerDb(): Promise<void> {
 }
 
 async function runWorkerMigrations(): Promise<void> {
-  // Ensure base schema exists (worker may start before or without API server)
-  const schemaPath = new URL("../server/db/schema.sql", import.meta.url).pathname;
-  try {
-    const schema = await Bun.file(schemaPath).text();
-    await db.unsafe(schema);
-  } catch (err) {
-    console.warn("Could not load schema.sql, assuming tables exist:", err instanceof Error ? err.message : err);
-  }
-
   await db`CREATE TABLE IF NOT EXISTS migrations (id TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`;
   const applied = await db`SELECT id FROM migrations`;
   const appliedSet = new Set(applied.map((r) => r.id));

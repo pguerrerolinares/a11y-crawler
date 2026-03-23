@@ -1,12 +1,12 @@
-import { SQL } from "bun";
+import postgres from "postgres";
 
-let db: InstanceType<typeof SQL> | null = null;
+let db: ReturnType<typeof postgres> | null = null;
 
 export function getDb() {
   if (!db) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is required");
-    db = new SQL(url);
+    db = postgres(url);
   }
   return db;
 }
@@ -20,7 +20,7 @@ export async function initDb() {
   await runMigrations(conn);
 }
 
-async function runMigrations(conn: InstanceType<typeof SQL>) {
+async function runMigrations(conn: ReturnType<typeof postgres>) {
   // Ensure migrations table exists
   await conn.unsafe(`
     CREATE TABLE IF NOT EXISTS migrations (
