@@ -167,12 +167,19 @@ export async function runPipeline(
       // ══════════════════════════════════════════════
 
       // Build axe cache from scan results — probe reuses these to avoid re-running axe-full
+      // Track unique fingerprints for dedup stats (prep for Phase 3 cross-audit)
       const axeCache = new Map<string, Issue[]>();
+      const seenAxeFingerprints = new Set<string>();
       for (const [pageUrl, result] of scanResults) {
         if (result.axeIssues.length > 0) {
           axeCache.set(pageUrl, result.axeIssues);
         }
+        // Track unique fingerprints regardless of whether axeIssues exist
+        const fp = result.fingerprint ?? pageUrl;
+        seenAxeFingerprints.add(fp);
       }
+      const totalAxePages = [...scanResults.values()].filter(r => r.axeIssues.length > 0).length;
+      console.log(`[pipeline] axeCache: ${totalAxePages} pages with issues, ${seenAxeFingerprints.size} unique fingerprints (of ${scanResults.size} total)`);
 
       await tracer.trace("audit:probe", async (probeSpan) => {
         await runProbePhase(getBrowser, auditId, templates, config, tracer, llmClient, axeCache);
