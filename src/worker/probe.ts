@@ -27,7 +27,7 @@ import { enableAnimations } from "./adaptive-wait";
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { computeCssFingerprint } from "../analyzer/screenshot-cvd";
-import { computeColorUseFingerprint } from "./probe-cache";
+import { computeColorUseFingerprint, collectDomStructure, computeDomHash } from "./probe-cache";
 
 const TEMPLATE_LEVEL_RULES = new Set([
   "color-contrast", "color-contrast-enhanced", "heading-order",
@@ -70,6 +70,8 @@ export async function runProbePhase(
   const cvdCache = new Map<string, { diffPercent: number; issues: Issue[] }>();
   const viewportCache = new Map<string, Issue[]>();
   const hfCache: HoverFocusCache = new Map();
+  const tier1Cache = new Map<string, { issues: Issue[]; promotedElements: ElementManifest[] }>();
+  const evaluateCache = new Map<string, Issue[]>();
 
   try {
     for (const cluster of templates) {
@@ -110,6 +112,7 @@ export async function runProbePhase(
             const p1Start = Date.now();
             const { issues: phase1Issues, promotedElements } = await runPhase1Static(
               page, cluster, url, timer, styleGroups, axeCache, config, llmClient, parentSpan,
+              cssFingerprint, tier1Cache, evaluateCache,
             );
             allIssues.push(...phase1Issues);
             phaseTimings.phase1StaticMs = Date.now() - p1Start;
@@ -228,12 +231,24 @@ async function runPhase1Static(
   config: PipelineConfig,
   llmClient: LLMClient | null,
   parentSpan: { setMeta: (m: Record<string, unknown>) => void },
+  cssFingerprint: string,
+  tier1Cache: Map<string, { issues: Issue[]; promotedElements: ElementManifest[] }>,
+  evaluateCache: Map<string, Issue[]>,
 ): Promise<{ issues: Issue[]; promotedElements: ElementManifest[] }> {
   const issues: Issue[] = [];
 
-  // Tier 1: CSSOM hover contrast
-  const { issues: tier1Issues, promotedElements } = await runTier1(page, styleGroups, url, timer);
-  issues.push(...tier1Issues);
+  // Tier 1: CSSOM hover contrast (cache by cssFingerprint — same CSS = same CSSOM results)
+  let promotedElements: ElementManifest[];
+  if (tier1Cache.has(cssFingerprint)) {
+    const cached = tier1Cache.get(cssFingerprint)!;
+    issues.push(...cached.issues.map(i => ({ ...i, url, id: crypto.randomUUID() })));
+    promotedElements = cached.promotedElements;
+  } else {
+    const { issues: tier1Issues, promotedElements: promoted } = await runTier1(page, styleGroups, url, timer);
+    issues.push(...tier1Issues);
+    promotedElements = promoted;
+    tier1Cache.set(cssFingerprint, { issues: tier1Issues, promotedElements: promoted });
+  }
 
   // axe-core (from cache or fallback)
   if (cluster.testPlan.includes("axe-full")) {
@@ -254,17 +269,26 @@ async function runPhase1Static(
     parentSpan.setMeta({ errorIdViolations: errorIdIssues.length });
   }
 
-  // page.evaluate()-only tests (parallel, read-only)
-  const evaluateTests: Promise<Issue[]>[] = [];
-  if (cluster.testPlan.includes("target-size")) evaluateTests.push(testTargetSize(page, url));
-  if (cluster.testPlan.includes("multimedia")) evaluateTests.push(testMultimedia(page, url));
-  if (cluster.testPlan.includes("timed-events")) evaluateTests.push(testTimedEvents(page, url));
-  if (cluster.testPlan.includes("non-text-contrast")) evaluateTests.push(testNonTextContrast(page, url));
-  if (cluster.testPlan.includes("meaningful-sequence")) evaluateTests.push(testMeaningfulSequence(page, url));
-  if (cluster.testPlan.includes("semantic-structure")) evaluateTests.push(testSemanticStructure(page, url));
-  if (cluster.testPlan.includes("legal-a11y")) evaluateTests.push(testLegalA11y(page, url));
-  const evalResults = await Promise.all(evaluateTests);
-  issues.push(...evalResults.flat());
+  // page.evaluate()-only tests (parallel, read-only) — cache by domHash
+  const domStructure = await collectDomStructure(page);
+  const domHash = computeDomHash(domStructure);
+
+  if (evaluateCache.has(domHash)) {
+    issues.push(...evaluateCache.get(domHash)!.map(i => ({ ...i, url, id: crypto.randomUUID() })));
+  } else {
+    const evaluateTests: Promise<Issue[]>[] = [];
+    if (cluster.testPlan.includes("target-size")) evaluateTests.push(testTargetSize(page, url));
+    if (cluster.testPlan.includes("multimedia")) evaluateTests.push(testMultimedia(page, url));
+    if (cluster.testPlan.includes("timed-events")) evaluateTests.push(testTimedEvents(page, url));
+    if (cluster.testPlan.includes("non-text-contrast")) evaluateTests.push(testNonTextContrast(page, url));
+    if (cluster.testPlan.includes("meaningful-sequence")) evaluateTests.push(testMeaningfulSequence(page, url));
+    if (cluster.testPlan.includes("semantic-structure")) evaluateTests.push(testSemanticStructure(page, url));
+    if (cluster.testPlan.includes("legal-a11y")) evaluateTests.push(testLegalA11y(page, url));
+    const evalResults = await Promise.all(evaluateTests);
+    const evalIssues = evalResults.flat();
+    issues.push(...evalIssues);
+    evaluateCache.set(domHash, evalIssues);
+  }
 
   // Sensory instructions (LLM text analysis — can run during static phase)
   if (cluster.testPlan.includes("sensory-instructions")) {
