@@ -53,10 +53,26 @@ test("computeElementHash: different role = different hash", () => {
 });
 
 test("computeElementHash: ignores accessibleName (different text = same hash)", () => {
+  // These would be two buttons with different labels but identical structure
+  // accessibleName is NOT part of the hash input, so they must match
   const a = { tag: "button", role: "button", ariaAttrs: "", cssFingerprint: "div|button|btn" };
   const b = { tag: "button", role: "button", ariaAttrs: "", cssFingerprint: "div|button|btn" };
-  // Both would have different accessibleName in real data, but hash should be identical
   expect(computeElementHash(a)).toBe(computeElementHash(b));
+  // Also verify via elementHashFromManifest with full manifests:
+});
+
+test("elementHashFromManifest: different accessibleName = same hash", () => {
+  const base = {
+    selector: "button.btn", tag: "button", role: "button", accessibleName: "",
+    boundingBox: { x: 0, y: 0, width: 100, height: 40 },
+    hasHoverCss: true, hasAriaExpanded: false, hasAriaPressed: false,
+    hasUnderline: false, isFormControl: false, hasOnclick: false,
+    defaultStyles: { borderColor: "", outlineColor: "", backgroundColor: "", boxShadow: "", textDecorationLine: "", color: "" },
+    parentBg: "", styleFingerprint: "div|button|btn-primary",
+  };
+  const a = { ...base, accessibleName: "Buy Plan A" };
+  const b = { ...base, accessibleName: "Buy Plan B" };
+  expect(elementHashFromManifest(a)).toBe(elementHashFromManifest(b));
 });
 ```
 
@@ -94,7 +110,7 @@ export function computeElementHash(el: {
  * Extract ARIA attribute string from ElementManifest for hashing.
  * Only includes boolean ARIA state attributes that affect interaction behavior.
  */
-export function extractAriaAttrs(el: ElementManifest): string {
+export function extractInteractionTraits(el: ElementManifest): string {
   const parts: string[] = [];
   if (el.hasAriaExpanded) parts.push("expanded");
   if (el.hasAriaPressed) parts.push("pressed");
@@ -110,7 +126,7 @@ export function elementHashFromManifest(el: ElementManifest): string {
   return computeElementHash({
     tag: el.tag,
     role: el.role,
-    ariaAttrs: extractAriaAttrs(el),
+    ariaAttrs: extractInteractionTraits(el),
     cssFingerprint: el.styleFingerprint,
   });
 }
@@ -218,132 +234,223 @@ git commit -m "feat: add ProbeCache hash computation utility (elementHash, domHa
 ### Task 2: P2 element-level interaction cache (hover+focus only)
 
 **Files:**
-- Modify: `src/worker/tier2.ts` (~lines 284-315)
-- Modify: `src/worker/probe.ts` (~line 67, ~line 112)
+- Modify: `src/worker/tier2.ts` (~lines 284-443)
+- Modify: `src/worker/probe.ts` (~line 67, ~line 112, ~line 272)
 - Create: `src/worker/__tests__/tier2-cache.test.ts`
 
-**Context:** `runTier2` iterates over promoted elements and calls `batchedHoverFocus()` for each. We cache the hover+focus result by elementHash. Click+keyboard always execute (they mutate state).
+**Context:** `runTier2` (tier2.ts:284-443) iterates over promoted elements. For each element the flow is:
+1. `batchedHoverFocus()` → captures hover/focus styles + popup detection (line 307)
+2. Popup sub-tests if popup detected (lines 321-370) — real mouse, NOT cacheable
+3. Click for ARIA state changes (lines 372-396) — mutates state, NOT cacheable
+4. Keyboard Enter/Space (lines 398-432) — mutates state, NOT cacheable
+5. Three evaluate calls AFTER the interaction sequence (lines 435-437):
+   - `evaluateStateChange(element, result, url)` — evaluates hover contrast
+   - `evaluateHoverFocus(element, result, url)` — evaluates popup behavior
+   - `evaluateAriaStates(element, result, url)` — evaluates click ARIA
 
-- [ ] **Step 1: Write failing test for interaction cache**
+**Cache strategy:** Only skip `batchedHoverFocus()` when cache hits AND the cached result had no popup. If the first occurrence of a fingerprint detected a popup, mark that fingerprint as non-cacheable (popup behavior depends on DOM context). Populate `result.hoverStyles` and `result.focusStyles` from cache, then let the ENTIRE remaining flow (popup guard, click, keyboard, all three evaluates at lines 435-437) proceed normally with the cached styles.
+
+- [ ] **Step 1: Write tests for interaction cache**
 
 ```typescript
 // src/worker/__tests__/tier2-cache.test.ts
 import { test, expect } from "bun:test";
-import { computeElementHash } from "../probe-cache";
+import { elementHashFromManifest } from "../probe-cache";
 
-test("elements with same structure produce same hash for cache lookup", () => {
-  const btn1 = { tag: "button", role: "button", ariaAttrs: "expanded", cssFingerprint: "div|button|btn-primary" };
-  const btn2 = { tag: "button", role: "button", ariaAttrs: "expanded", cssFingerprint: "div|button|btn-primary" };
-  expect(computeElementHash(btn1)).toBe(computeElementHash(btn2));
+const baseManifest = {
+  selector: "button.btn",
+  tag: "button",
+  role: "button",
+  accessibleName: "Submit",
+  boundingBox: { x: 0, y: 0, width: 100, height: 40 },
+  hasHoverCss: true,
+  hasAriaExpanded: false,
+  hasAriaPressed: false,
+  hasUnderline: false,
+  isFormControl: false,
+  hasOnclick: false,
+  defaultStyles: { borderColor: "", outlineColor: "", backgroundColor: "", boxShadow: "", textDecorationLine: "", color: "" },
+  parentBg: "rgb(255,255,255)",
+  styleFingerprint: "div|button|btn-primary",
+};
+
+test("elementHashFromManifest: same structure, different accessibleName = same hash", () => {
+  const a = { ...baseManifest, accessibleName: "Buy Plan A" };
+  const b = { ...baseManifest, accessibleName: "Buy Plan B" };
+  expect(elementHashFromManifest(a)).toBe(elementHashFromManifest(b));
 });
 
-test("cache Map returns stored value for same elementHash", () => {
-  const cache = new Map<string, { issues: Array<{ rule: string }> }>();
-  const hash = computeElementHash({ tag: "a", role: "link", ariaAttrs: "", cssFingerprint: "nav|a|" });
-  cache.set(`hf:${hash}`, { issues: [{ rule: "hover-focus-not-persistent" }] });
+test("elementHashFromManifest: different role = different hash", () => {
+  const a = { ...baseManifest, role: "button" };
+  const b = { ...baseManifest, role: "menuitem" };
+  expect(elementHashFromManifest(a)).not.toBe(elementHashFromManifest(b));
+});
 
-  const lookup = cache.get(`hf:${hash}`);
-  expect(lookup).toBeDefined();
-  expect(lookup!.issues).toHaveLength(1);
-  expect(lookup!.issues[0].rule).toBe("hover-focus-not-persistent");
+test("elementHashFromManifest: different ariaExpanded = different hash", () => {
+  const a = { ...baseManifest, hasAriaExpanded: false };
+  const b = { ...baseManifest, hasAriaExpanded: true };
+  expect(elementHashFromManifest(a)).not.toBe(elementHashFromManifest(b));
+});
+
+test("HoverFocusCache: stores and retrieves by element hash", () => {
+  const cache = new Map<string, { hoverStyles: Record<string, string>; focusStyles: Record<string, string>; hadPopup: boolean }>();
+  const hash = elementHashFromManifest(baseManifest);
+  const key = `hf:${hash}`;
+
+  cache.set(key, {
+    hoverStyles: { color: "rgb(255,0,0)" },
+    focusStyles: { outlineColor: "rgb(0,0,255)" },
+    hadPopup: false,
+  });
+
+  const hit = cache.get(key);
+  expect(hit).toBeDefined();
+  expect(hit!.hadPopup).toBe(false);
+  expect(hit!.hoverStyles.color).toBe("rgb(255,0,0)");
+});
+
+test("HoverFocusCache: popup elements are marked non-cacheable", () => {
+  const cache = new Map<string, { hoverStyles: Record<string, string>; focusStyles: Record<string, string>; hadPopup: boolean }>();
+  const hash = elementHashFromManifest(baseManifest);
+  const key = `hf:${hash}`;
+
+  // First element with this fingerprint had a popup
+  cache.set(key, {
+    hoverStyles: { color: "rgb(255,0,0)" },
+    focusStyles: {},
+    hadPopup: true,
+  });
+
+  // Second element: lookup hits, but hadPopup=true means skip cache
+  const hit = cache.get(key);
+  expect(hit!.hadPopup).toBe(true);
+  // Caller should NOT use cached styles, must run batchedHoverFocus
 });
 ```
 
-- [ ] **Step 2: Run test to verify it passes** (this is a unit test of the cache pattern, not integration)
+- [ ] **Step 2: Run test to verify it fails**
 
 Run: `bun test src/worker/__tests__/tier2-cache.test.ts`
-Expected: 2 PASS
+Expected: FAIL — `elementHashFromManifest` not found (Task 1 must be done first)
 
-- [ ] **Step 3: Add interactionCache parameter to runTier2**
+- [ ] **Step 3: Define HoverFocusCache type and add to runTier2 signature**
 
-In `src/worker/tier2.ts`, modify the function signature:
-
-```typescript
-// Before:
-export async function runTier2(
-  page: Page,
-  elements: ElementManifest[],
-  url: string,
-  timer: TierTimer,
-): Promise<{ issues: Issue[]; promotedToTier3: ElementManifest[] }> {
-
-// After:
-export async function runTier2(
-  page: Page,
-  elements: ElementManifest[],
-  url: string,
-  timer: TierTimer,
-  interactionCache?: Map<string, { hoverStyles?: Record<string, string>; focusStyles?: Record<string, string>; hoverIssues: Issue[]; focusIssues: Issue[] }>,
-): Promise<{ issues: Issue[]; promotedToTier3: ElementManifest[] }> {
-```
-
-- [ ] **Step 4: Add cache lookup before batchedHoverFocus**
-
-In `runTier2`, inside the `for (const element of elements)` loop, before the `batchedHoverFocus` call (~line 307):
+In `src/worker/tier2.ts`:
 
 ```typescript
 import { elementHashFromManifest } from "./probe-cache";
 
-// Inside the loop, after const handle = await page.$(element.selector):
-const elemHash = elementHashFromManifest(element);
-const hfCacheKey = `hf:${elemHash}`;
+// Type for the hover+focus cache
+export type HoverFocusCache = Map<string, {
+  hoverStyles: Record<string, string>;
+  focusStyles: Record<string, string>;
+  hadPopup: boolean;
+}>;
 
-// Check cache for hover+focus results
-if (interactionCache?.has(hfCacheKey)) {
-  const cached = interactionCache.get(hfCacheKey)!;
-  // Reuse hover+focus results, remap to current element
-  result.hoverStyles = cached.hoverStyles;
-  result.focusStyles = cached.focusStyles;
-  allIssues.push(...cached.hoverIssues.map(i => ({ ...i, url, selector: element.selector, id: crypto.randomUUID() })));
-  allIssues.push(...cached.focusIssues.map(i => ({ ...i, url, selector: element.selector, id: crypto.randomUUID() })));
-  timer.recordInteraction("hovers");
-  timer.recordInteraction("focuses");
-  // Skip to click+keyboard (which always executes)
-} else {
-  // Existing batchedHoverFocus call
-  const batched = await batchedHoverFocus(page, element.selector);
-  if (!batched) continue;
-  result.hoverStyles = batched.hoverStyles;
-  result.hoverPopup = batched.hoverPopup;
-  result.focusStyles = batched.focusStyles;
-  result.focusPopup = batched.focusPopup;
-  timer.recordInteraction("hovers");
-  timer.recordInteraction("focuses");
-
-  // Evaluate hover+focus issues and store in cache
-  const hoverIssues = evaluateStateChange(element, { hoverStyles: result.hoverStyles }, url);
-  const focusIssues = evaluateFocusIndicator(element, result, url);
-  interactionCache?.set(hfCacheKey, {
-    hoverStyles: result.hoverStyles,
-    focusStyles: result.focusStyles,
-    hoverIssues,
-    focusIssues,
-  });
-}
+// Updated signature:
+export async function runTier2(
+  page: Page,
+  elements: ElementManifest[],
+  url: string,
+  timer: TierTimer,
+  hfCache?: HoverFocusCache,
+): Promise<{ issues: Issue[]; promotedToTier3: ElementManifest[] }> {
 ```
 
-**Note:** The popup sub-tests (persistence, hoverability, dismissibility) are NOT cached — they are rare-path and require real mouse interaction. They execute normally when `result.hoverPopup` is detected.
+- [ ] **Step 4: Add cache logic inside the element loop**
 
-- [ ] **Step 5: Pass interactionCache from probe.ts**
+The cache only replaces `batchedHoverFocus()`. Everything else (popup tests, click, keyboard, all three evaluate calls at lines 435-437) runs normally.
 
-In `src/worker/probe.ts`, in `runProbePhase`:
+In the `for (const element of elements)` loop, REPLACE lines 304-315:
 
 ```typescript
-// Add after cvdCache and viewportCache declarations (~line 68):
-const interactionCache = new Map<string, { hoverStyles?: Record<string, string>; focusStyles?: Record<string, string>; hoverIssues: Issue[]; focusIssues: Issue[] }>();
+    try {
+      // Cache lookup: skip batchedHoverFocus if same fingerprint already tested
+      // and no popup was detected (popup path requires real mouse interaction)
+      const elemHash = elementHashFromManifest(element);
+      const hfCacheKey = `hf:${elemHash}`;
+      const cachedHF = hfCache?.get(hfCacheKey);
+
+      if (cachedHF && !cachedHF.hadPopup) {
+        // Cache hit (no popup) — reuse styles, skip batchedHoverFocus
+        result.hoverStyles = cachedHF.hoverStyles;
+        result.focusStyles = cachedHF.focusStyles;
+        result.hoverPopup = null;
+        result.focusPopup = null;
+        timer.recordInteraction("hovers");
+        timer.recordInteraction("focuses");
+      } else {
+        // Cache miss or popup fingerprint — run real interaction
+        const batched = await batchedHoverFocus(page, element.selector);
+        if (!batched) continue;
+
+        result.hoverStyles = batched.hoverStyles;
+        result.hoverPopup = batched.hoverPopup;
+        result.focusStyles = batched.focusStyles;
+        result.focusPopup = batched.focusPopup;
+        timer.recordInteraction("hovers");
+        timer.recordInteraction("focuses");
+
+        // Store in cache (including whether popup was detected)
+        hfCache?.set(hfCacheKey, {
+          hoverStyles: result.hoverStyles ?? {},
+          focusStyles: result.focusStyles ?? {},
+          hadPopup: !!result.hoverPopup || !!result.focusPopup,
+        });
+      }
+
+      // === EVERYTHING BELOW RUNS REGARDLESS OF CACHE HIT ===
+
+      // Popup sub-tests (lines 321-370) — only if popup detected, uses real mouse
+      if (result.hoverPopup) {
+        // ... existing popup code unchanged ...
+      }
+
+      // Click ARIA (lines 372-396) — always runs for aria-expanded/pressed
+      // ... existing click code unchanged ...
+
+      // Keyboard (lines 398-432) — always runs for custom interactive
+      // ... existing keyboard code unchanged ...
+
+      // All three evaluate calls (lines 435-437) — always run
+      allIssues.push(...evaluateStateChange(element, result, url));
+      allIssues.push(...evaluateHoverFocus(element, result, url));
+      allIssues.push(...evaluateAriaStates(element, result, url));
 ```
 
-In `runPhase2Interaction`, pass it through:
+**Key insight:** The three evaluate calls at lines 435-437 stay EXACTLY where they are. They use `result` which is populated either from cache (hoverStyles/focusStyles only) or from real interaction (all fields). `evaluateHoverFocus` checks `result.popupPersistent` etc. — these will be `undefined` on cache hit, which correctly means "no popup issues".
+
+- [ ] **Step 5: Pass HoverFocusCache from probe.ts**
+
+In `src/worker/probe.ts`:
 
 ```typescript
-// Modify runPhase2Interaction signature and call to runTier2:
-const { issues: tier2Issues, promotedToTier3 } = await runTier2(page, promotedElements, url, timer, interactionCache);
+// In runProbePhase, after cvdCache and viewportCache (~line 68):
+import type { HoverFocusCache } from "./tier2";
+const hfCache: HoverFocusCache = new Map();
 ```
 
-- [ ] **Step 6: Run full test suite**
+In `runPhase2Interaction` signature and body:
+
+```typescript
+async function runPhase2Interaction(
+  page: Page,
+  promotedElements: ElementManifest[],
+  url: string,
+  timer: TierTimer,
+  cluster: TemplateCluster,
+  hfCache: HoverFocusCache,  // NEW
+): Promise<{ issues: Issue[]; promotedToTier3: ElementManifest[] }> {
+  // ...
+  const { issues: tier2Issues, promotedToTier3 } = await runTier2(page, promotedElements, url, timer, hfCache);
+```
+
+Update the call site in the template loop accordingly.
+
+- [ ] **Step 6: Run tests**
 
 Run: `bun test --timeout 30000`
-Expected: 263+ PASS, 0 FAIL
+Expected: 265+ PASS, 0 FAIL
 
 - [ ] **Step 7: Verify tsc**
 
@@ -354,40 +461,54 @@ Expected: No errors
 
 ```bash
 git add src/worker/tier2.ts src/worker/probe.ts src/worker/__tests__/tier2-cache.test.ts
-git commit -m "feat: P2 element-level interaction cache (hover+focus dedup by elementHash)"
+git commit -m "feat: P2 hover+focus cache by elementHash (skip batchedHoverFocus on cache hit, no-popup only)"
 ```
 
 ---
 
-### Task 3: P4 color-use extended fingerprint
+### Task 3: P4 color-use extended fingerprint + cssHash computed once
 
 **Files:**
-- Modify: `src/analyzer/wcag-color-use.ts` (~line 190-210, cvdCache key)
-- Modify: `src/worker/probe.ts` (~line 356, testColorUse call)
+- Modify: `src/worker/probe-cache.ts` (add `computeColorUseFingerprint`)
+- Modify: `src/analyzer/wcag-color-use.ts` (lines 185-200: accept pre-computed cssHash + manifest)
+- Modify: `src/worker/probe.ts` (compute cssHash once per template, pass to all phases)
+- Add test: `src/worker/__tests__/probe-cache.test.ts`
 
-**Context:** Current `cvdCache` keys by `cssHash` only. Two pages with different CSS but same color-dependent elements get different keys even though CVD results would be identical. Extend key with color-dependent element fingerprint.
+**Context:** `testColorUse` (wcag-color-use.ts:195) computes `cssFingerprint` internally via `computeCssFingerprint(page)`. The same function is called again in `runPhase3Viewport` (probe.ts:312). Fix: compute once in the template loop, pass as parameter to all phases. Then extend the cvdCache key with color-dependent element fingerprint.
 
-- [ ] **Step 1: Examine current cvdCache usage**
+**Current `testColorUse` signature (wcag-color-use.ts:178-186):**
+```typescript
+export async function testColorUse(
+  page: Page,
+  url: string,
+  llmClient: LLMClient | null,
+  screenshotDir?: string,
+  templatePrefix?: string,
+  cvdCache?: Map<string, { diffPercent: number; issues: Issue[] }>,
+): Promise<ColorUseResult>
+```
 
-Read `src/analyzer/wcag-color-use.ts` around the cache lookup (near the top of `testColorUse` function). Understand the current `cvdCache: Map<string, { diffPercent: number; issues: Issue[] }>` interface.
+**Current cache lookup (wcag-color-use.ts:195-200):**
+```typescript
+const fingerprint = await computeCssFingerprint(page);
+if (cvdCache?.has(fingerprint)) {
+  const cached = cvdCache.get(fingerprint)!;
+  issues.push(...cached.issues.map(i => ({ ...i, url, id: crypto.randomUUID() })));
+  return { issues, screenshots };
+}
+```
 
-- [ ] **Step 2: Add color-dependent element extraction to manifest**
-
-In `src/worker/probe-cache.ts`, add:
+- [ ] **Step 1: Add computeColorUseFingerprint to probe-cache.ts**
 
 ```typescript
-/**
- * Compute a fingerprint for color-use test that includes which elements
- * are color-dependent (links without underline, status indicators).
- * More specific than cssHash alone.
- */
+// Append to src/worker/probe-cache.ts
 export function computeColorUseFingerprint(
   cssHash: string,
   manifest: ElementManifest[],
 ): string {
   const colorElements = manifest
     .filter(el =>
-      (el.tag === "a" && !el.hasUnderline) || // links distinguished only by color
+      (el.tag === "a" && !el.hasUnderline) ||
       el.role === "status" ||
       el.role === "alert" ||
       el.isFormControl
@@ -399,26 +520,110 @@ export function computeColorUseFingerprint(
 }
 ```
 
-- [ ] **Step 3: Replace cvdCache key in probe.ts Phase 4**
+- [ ] **Step 2: Add test for computeColorUseFingerprint**
 
-In `runPhase4Capture` in `src/worker/probe.ts`, where `testColorUse` is called with `cvdCache`, compute the extended key and pass it. The exact integration depends on how testColorUse uses the cache — it may need the new key passed in, or the cache itself needs the new key type.
+```typescript
+// Append to src/worker/__tests__/probe-cache.test.ts
+import { computeColorUseFingerprint } from "../probe-cache";
 
-Review `testColorUse` signature and modify the cache key computation before the call.
+test("computeColorUseFingerprint: same CSS + same color elements = same hash", () => {
+  const manifest = [
+    { ...baseManifest, tag: "a", hasUnderline: false, role: "link", styleFingerprint: "nav|a|" },
+  ] as any;
+  const a = computeColorUseFingerprint("css123", manifest);
+  const b = computeColorUseFingerprint("css123", manifest);
+  expect(a).toBe(b);
+});
 
-- [ ] **Step 4: Run full test suite**
+test("computeColorUseFingerprint: different CSS = different hash", () => {
+  const manifest = [
+    { ...baseManifest, tag: "a", hasUnderline: false, role: "link", styleFingerprint: "nav|a|" },
+  ] as any;
+  const a = computeColorUseFingerprint("css123", manifest);
+  const b = computeColorUseFingerprint("css456", manifest);
+  expect(a).not.toBe(b);
+});
+```
+
+- [ ] **Step 3: Modify testColorUse to accept pre-computed cssHash and manifest**
+
+In `src/analyzer/wcag-color-use.ts`, change the signature:
+
+```typescript
+// Before:
+export async function testColorUse(
+  page: Page,
+  url: string,
+  llmClient: LLMClient | null,
+  screenshotDir?: string,
+  templatePrefix?: string,
+  cvdCache?: Map<string, { diffPercent: number; issues: Issue[] }>,
+): Promise<ColorUseResult> {
+
+// After:
+export async function testColorUse(
+  page: Page,
+  url: string,
+  llmClient: LLMClient | null,
+  screenshotDir?: string,
+  templatePrefix?: string,
+  cvdCache?: Map<string, { diffPercent: number; issues: Issue[] }>,
+  precomputedFingerprint?: string,  // NEW: skip computeCssFingerprint if provided
+): Promise<ColorUseResult> {
+```
+
+Replace the fingerprint computation (line 195):
+
+```typescript
+// Before:
+const fingerprint = await computeCssFingerprint(page);
+
+// After:
+const fingerprint = precomputedFingerprint ?? await computeCssFingerprint(page);
+```
+
+- [ ] **Step 4: Compute cssHash once per template in probe.ts**
+
+In `runProbePhase`, inside the template loop, after `collectManifest` (probe.ts:95):
+
+```typescript
+import { computeCssFingerprint } from "../analyzer/screenshot-cvd";
+import { computeColorUseFingerprint } from "./probe-cache";
+
+// After collectManifest, before Phase 1:
+const cssFingerprint = await computeCssFingerprint(page);
+```
+
+Pass `cssFingerprint` to:
+1. `runPhase3Viewport` — replace the internal `computeCssFingerprint` call with the pre-computed value
+2. `runPhase4Capture` — pass to `testColorUse` as `precomputedFingerprint`
+3. Compute `colorUseFingerprint = computeColorUseFingerprint(cssFingerprint, manifest)` and use as cvdCache key
+
+In `runPhase4Capture`, update the `testColorUse` call:
+
+```typescript
+// Before:
+testColorUse(page, url, llmClient, screenshotDir, cluster.id.slice(0, 8), cvdCache),
+
+// After:
+const colorFp = computeColorUseFingerprint(cssFingerprint, manifest);
+testColorUse(page, url, llmClient, screenshotDir, cluster.id.slice(0, 8), cvdCache, colorFp),
+```
+
+- [ ] **Step 5: Run full test suite**
 
 Run: `bun test --timeout 30000`
 Expected: All PASS
 
-- [ ] **Step 5: Verify tsc**
+- [ ] **Step 6: Verify tsc**
 
 Run: `bunx tsc --noEmit`
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/worker/probe-cache.ts src/analyzer/wcag-color-use.ts src/worker/probe.ts
-git commit -m "feat: P4 color-use extended fingerprint (cssHash + color-dependent elements)"
+git add src/worker/probe-cache.ts src/worker/__tests__/probe-cache.test.ts src/analyzer/wcag-color-use.ts src/worker/probe.ts
+git commit -m "feat: P4 color-use extended fingerprint + cssHash computed once per template"
 ```
 
 ---
@@ -574,11 +779,18 @@ git commit -m "feat: scan axe cache dedup logging by template fingerprint (prep 
 
 - [ ] **Step 1: Add cache hit/miss counters to probe**
 
-In `runProbePhase`, after the `for` loop, log aggregated cache stats:
+In `runProbePhase`, add hit/miss counters alongside the caches:
+
+```typescript
+// After cache declarations (~line 68):
+const cacheStats = { hfHits: 0, hfMisses: 0, tier1Hits: 0, tier1Misses: 0, evalHits: 0, evalMisses: 0 };
+```
+
+Increment in the appropriate places (pass `cacheStats` to phases, increment on cache hit/miss). Then log after the template loop:
 
 ```typescript
 // After the template loop, before probeCtx.close():
-console.log(`[probe] Cache stats — interactionCache: ${interactionCache.size} entries, tier1Cache: ${tier1Cache.size}, evaluateCache: ${evaluateCache.size}, viewportCache: ${viewportCache.size}, cvdCache: ${cvdCache.size}`);
+console.log(`[probe] Cache stats — hf: ${cacheStats.hfHits}/${cacheStats.hfHits + cacheStats.hfMisses} hits, tier1: ${cacheStats.tier1Hits}/${cacheStats.tier1Hits + cacheStats.tier1Misses}, eval: ${cacheStats.evalHits}/${cacheStats.evalHits + cacheStats.evalMisses}`);
 ```
 
 - [ ] **Step 2: Add cache hit rate to probe:representative span metadata**
@@ -586,10 +798,13 @@ console.log(`[probe] Cache stats — interactionCache: ${interactionCache.size} 
 In the `phaseTimings` object that's already set on `parentSpan`, add:
 
 ```typescript
-phaseTimings.cacheHits = {
-  interactionCache: interactionCache.size,
-  tier1Cache: tier1Cache.size,
-  evaluateCache: evaluateCache.size,
+phaseTimings.cacheStats = {
+  hfHits: cacheStats.hfHits,
+  hfMisses: cacheStats.hfMisses,
+  tier1Hits: cacheStats.tier1Hits,
+  tier1Misses: cacheStats.tier1Misses,
+  evalHits: cacheStats.evalHits,
+  evalMisses: cacheStats.evalMisses,
 };
 ```
 
