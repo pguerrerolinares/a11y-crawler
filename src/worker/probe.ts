@@ -24,6 +24,7 @@ import { runTier2 } from "./tier2";
 import { TierTimer } from "./tier-timer";
 import { enableAnimations } from "./adaptive-wait";
 import { join } from "node:path";
+import { mkdir } from "node:fs/promises";
 import { computeCssFingerprint } from "../analyzer/screenshot-cvd";
 
 const TEMPLATE_LEVEL_RULES = new Set([
@@ -350,7 +351,7 @@ async function runPhase4Capture(
 
   if (cluster.testPlan.includes("color-use")) {
     const screenshotDir = join(process.env.REPORTS_DIR || "./reports", auditId, "screenshots");
-    await Bun.write(join(screenshotDir, ".keep"), "");
+    await mkdir(screenshotDir, { recursive: true });
     parallel.push(
       withTimeout(
         testColorUse(page, url, llmClient, screenshotDir, cluster.id.slice(0, 8), cvdCache),

@@ -128,6 +128,7 @@ export async function computeCssFingerprint(page: Page): Promise<string> {
     });
     return parts.sort().join('|');
   });
-  const hash = new Bun.CryptoHasher("md5").update(raw).digest("hex");
+  const { createHash } = await import("node:crypto");
+  const hash = createHash("md5").update(raw).digest("hex");
   return hash;
 }

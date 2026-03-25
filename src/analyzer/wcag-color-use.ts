@@ -3,6 +3,7 @@ import type { Page } from "playwright";
 import type { Issue } from "../types/issue";
 import type { LLMClient } from "../llm/client";
 import { buildMultimodalMessage, extractJsonFromLlm } from "../llm/client";
+import { writeFile } from "node:fs/promises";
 import { makeWcagIssue } from "./utils";
 import { computePixelDiffPercent, cvdScreenshotDiff, computeCssFingerprint } from "./screenshot-cvd";
 import type { CvdDiffResult, DiffBoundingBox } from "./screenshot-cvd";
@@ -226,8 +227,8 @@ export async function testColorUse(
           if (r.diffPercent <= 5) continue;
           const normalPath = join(screenshotDir, `${templatePrefix}-${r.deficiency}-normal.jpg`);
           const cvdPath = join(screenshotDir, `${templatePrefix}-${r.deficiency}-cvd.jpg`);
-          await Bun.write(normalPath, r.normalImg);
-          await Bun.write(cvdPath, r.cvdImg);
+          await writeFile(normalPath, r.normalImg);
+          await writeFile(cvdPath, r.cvdImg);
           screenshots.push({ deficiency: r.deficiency, normalPath, cvdPath });
         }
       }
