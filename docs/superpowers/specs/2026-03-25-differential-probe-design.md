@@ -1,7 +1,7 @@
 # Differential Probe — Design Spec
 
 > Date: 2026-03-25
-> Status: Draft
+> Status: Review-1 (post code review — HIGH-1/2/3/4 + MEDIUM-5/9 fixed)
 > Author: Paul + Claude
 > Scope: Optimize probe pipeline via hierarchical memoization (intra-audit) and persistent cache (cross-audit)
 > Research basis: Sprinter (NSDI 2024), STILE (JSS 2024), project research docs
@@ -56,12 +56,17 @@ All caching is organized around a Merkle-style hash tree:
       elemHash1  elemHash2  elemHash3
 ```
 
-- `templateHash = hash(manifestHash + cssHash + domHash + contentHash)`
+- `templateHash = hash(manifestHash + cssHash + domHash)`
 - `manifestHash = hash(sorted(elementHashes))`
-- `elementHash = hash(tag + role + ariaAttributes + cssFingerprint + accessibleName)`
+- `elementHash = hash(tag + role + ariaAttributes + cssFingerprint)` (excludes accessibleName — see §3.5)
 - `cssHash = computeCssFingerprint(page)` (already exists)
-- `domHash = hash(tagDistribution + elementCount + cssHash)`
-- `contentHash = hash(page.content())`
+- `domHash = hash(sortedSelectorList + headingStructure + landmarkStructure + formStructure)`
+  - `sortedSelectorList`: sorted tag+id+class of all manifest elements (captures DOM structure)
+  - `headingStructure`: ordered heading levels (h1, h2, h2, h3...) — meaningful-sequence depends on this
+  - `landmarkStructure`: ordered landmark roles (nav, main, footer...)
+  - `formStructure`: form field types and order
+
+**Note:** `contentHash = hash(page.content())` is NOT part of the hash tree. Raw HTML includes volatile content (CSRF tokens, timestamps, nonces) that would cause false cache misses. Structural changes are captured by domHash and manifestHash instead.
 
 **Comparison at any level is O(1).** A single hash comparison determines whether to skip an entire template, a phase, or individual element interactions.
 
@@ -94,7 +99,58 @@ While B is in P3→P4, pre-load next batch:
 
 **Why it works:** P1 and P2 operate on individual pages (evaluate, hover, focus). Each page lives in its own tab — no interference. P3 and P4 mutate viewport and use CDP, so they run sequentially.
 
-**RAM impact:** 2 renderers active simultaneously = ~200-300MB extra. Fits within 1.9GB available.
+**ProbeContextManager concurrency model:**
+
+Current `ProbeContextManager.get()` increments `pagesSinceRecycle` and may close/recreate the context. With 2 parallel pages, the second call could trigger recycling while the first page is still active.
+
+**Solution: Lease-based context management.**
+
+```typescript
+class ProbeContextManager {
+  private activePages = 0;
+
+  async lease(): Promise<{ page: Page; release: () => Promise<void> }> {
+    // Only recycle when ALL leased pages are released
+    if (this.activePages === 0 && this.pagesSinceRecycle >= this.pagesPerContext) {
+      await this.close();
+    }
+    const context = await this.getOrCreate();
+    const page = await context.newPage();
+    this.activePages++;
+    this.pagesSinceRecycle++;
+
+    return {
+      page,
+      release: async () => {
+        try { await page.close(); } catch {}
+        this.activePages--;
+      }
+    };
+  }
+}
+```
+
+Context recycling only happens when `activePages === 0`, so no page is ever orphaned.
+
+**RAM guard — fallback to sequential:**
+
+```typescript
+const RSS_THRESHOLD = 0.80 * totalSystemMemory; // 80% of available
+
+function shouldBatch(): boolean {
+  const rss = process.memoryUsage().rss;
+  return rss < RSS_THRESHOLD;
+}
+
+// In probe loop:
+const batchSize = shouldBatch() ? 2 : 1;
+```
+
+If memory exceeds 80%, degrade to sequential mode (batchSize=1). No functionality loss, just slower.
+
+**Speculative prefetch only during P3+P4** (not during batch P1+P2) to avoid 3 concurrent pages.
+
+**RAM impact:** 2 renderers during P1+P2 batch = ~200-300MB extra. With RAM guard, safe.
 
 ### 3.2 Extended Memoization — What's New
 
@@ -112,61 +168,101 @@ While B is in P3→P4, pre-load next batch:
 
 ### 3.3 Scan axe Cache (contentHash)
 
-During scan phase, before running axe on a page, compute `contentHash = hash(page.content())`. If another page in this audit has the same contentHash, reuse axe results.
+During scan phase, pages are already grouped by template fingerprint (simhash from classify). Pages in the same template share structural similarity, and axe results correlate strongly with template structure, not dynamic content. Use template fingerprint as cache key instead of `page.content()` (which includes volatile CSRF tokens, timestamps, nonces that cause false misses).
 
 ```typescript
-const contentHash = createHash('md5').update(await page.content()).digest('hex');
-if (scanAxeCache.has(contentHash)) {
-  axeIssues = scanAxeCache.get(contentHash)!.map(i => ({ ...i, url }));
-} else {
-  axeIssues = await runAxeFull(page, url, config);
-  scanAxeCache.set(contentHash, axeIssues);
+// After classify assigns templates, before probe:
+// Run axe only on one page per template during scan, reuse for others
+const templateAxeCache = new Map<string, Issue[]>();
+for (const [url, result] of scanResults) {
+  const templateFp = result.fingerprint;
+  if (templateAxeCache.has(templateFp)) {
+    result.axeIssues = templateAxeCache.get(templateFp)!.map(i => ({ ...i, url }));
+  } else {
+    templateAxeCache.set(templateFp, result.axeIssues);
+  }
 }
 ```
 
-**Estimated savings:** 3-4s (skip ~8 redundant axe runs out of 33)
+**Estimated savings:** 1-2s (skip ~8 redundant axe runs, but axe is already fast per-page; main value is reducing DB inserts)
 
 ### 3.4 P1 Evaluate Cache (domHash)
 
 Tests like `testTargetSize`, `testMeaningfulSequence`, `testSemanticStructure` are `page.evaluate()` read-only. Cache results by DOM fingerprint.
 
 ```typescript
-const domHash = createHash('md5')
-  .update(cssFingerprint + ':' + manifest.length + ':' + tagDistribution)
-  .digest('hex');
+// domHash captures actual structure, not just counts
+const domHash = await page.evaluate(() => {
+  const selectors = Array.from(document.querySelectorAll('*'))
+    .filter(el => el.id || el.className || el.tagName !== 'DIV')
+    .map(el => `${el.tagName}.${el.className}`)
+    .sort().join('|');
+  const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6'))
+    .map(h => h.tagName).join(',');
+  const landmarks = Array.from(document.querySelectorAll('[role],nav,main,header,footer,aside'))
+    .map(l => l.getAttribute('role') || l.tagName).join(',');
+  const forms = Array.from(document.querySelectorAll('input,select,textarea'))
+    .map(f => f.getAttribute('type') || f.tagName).join(',');
+  return `${selectors}::${headings}::${landmarks}::${forms}`;
+});
+const domHashKey = createHash('md5').update(domHash).digest('hex');
 
-if (evaluateCache.has(domHash)) {
-  issues = evaluateCache.get(domHash)!.map(i => ({ ...i, url }));
+if (evaluateCache.has(domHashKey)) {
+  issues = evaluateCache.get(domHashKey)!.map(i => ({ ...i, url, id: crypto.randomUUID() }));
 } else {
   issues = await Promise.all(evaluateTests);
-  evaluateCache.set(domHash, issues);
+  evaluateCache.set(domHashKey, issues);
 }
 ```
+
+**Note:** Cached issues get new UUIDs to avoid primary key conflicts in DB.
 
 **Estimated savings:** 0.5-1s
 
 ### 3.5 P2 Element-Level Interaction Cache (elementHash)
 
-Before interacting with an element (hover→focus→click→keyboard), compute its fingerprint. If already tested in this audit (same or different template), reuse result.
+Before interacting with an element, compute its fingerprint. **Excludes `accessibleName`** — two buttons "Buy plan A" and "Buy plan B" have identical interaction behavior (same hover styles, same focus indicator, same ARIA pattern). Including text content would defeat dedup.
+
+**Cache scope is limited to observation-only interactions:**
+
+| Sub-test | Cacheable? | Reason |
+|----------|-----------|--------|
+| Hover → read styles | ✅ Yes | Pure observation, no state mutation |
+| Focus → read styles | ✅ Yes | Pure observation |
+| Click → verify ARIA state | ❌ No | Mutates page state (aria-expanded toggle) |
+| Keyboard → Enter/Space | ❌ No | May trigger navigation, form submit |
+
+Only hover+focus results are cached. Click and keyboard tests always execute because they mutate the page and their side effects may affect subsequent elements.
 
 ```typescript
 interface ElementFingerprint {
-  hash: string;  // hash(tag + role + ariaAttrs + cssFingerprint + accessibleName)
+  hash: string;  // hash(tag + role + ariaAttrs + cssFingerprint) — NO accessibleName
 }
 
-// In runTier2, before interaction:
+// In runTier2, for each element:
 const elemHash = computeElementHash(element);
-if (interactionCache.has(elemHash)) {
-  const cached = interactionCache.get(elemHash)!;
-  issues.push(...cached.issues.map(i => ({ ...i, url, selector: element.selector })));
+// hash = md5(tag + role + ariaAttrs + cssFingerprint) — NO accessibleName
+
+// 1. Hover+focus: cacheable (observation only)
+const hoverFocusCacheKey = `hf:${elemHash}`;
+let hoverFocusIssues: Issue[];
+if (interactionCache.has(hoverFocusCacheKey)) {
+  hoverFocusIssues = interactionCache.get(hoverFocusCacheKey)!
+    .map(i => ({ ...i, url, selector: element.selector, id: crypto.randomUUID() }));
 } else {
-  const result = await interactWithElement(page, element, ...);
-  interactionCache.set(elemHash, result);
-  issues.push(...result.issues);
+  hoverFocusIssues = await testHoverFocus(page, element);
+  interactionCache.set(hoverFocusCacheKey, hoverFocusIssues);
 }
+issues.push(...hoverFocusIssues);
+
+// 2. Click+keyboard: ALWAYS execute (mutates page state)
+const clickKeyboardIssues = await testClickKeyboard(page, element);
+issues.push(...clickKeyboardIssues);
 ```
 
-**Estimated savings:** 3-4s (702 → ~250 unique interactions)
+**Estimated savings:** 2-3s (hover+focus deduped: 702 → ~250 unique; click+keyboard still runs for all elements with aria-expanded/pressed/selected)
+
+**Note:** Conservative estimate vs original 3-4s because click+keyboard is not cacheable. The savings come from skipping the hover+focus roundtrips (~60% of P2 time per element).
 
 ### 3.6 P4 Color-Use Dedup (extended fingerprint)
 
@@ -209,16 +305,18 @@ if (manifestCache.has(prefetched.manifestHash)) {
 
 ### 3.8 Eje 1 Summary
 
-| Optimization | From | To | Savings |
-|---|---|---|---|
-| Batch P1+P2 parallel (2 pages) | Sequential | Overlapped | 5-7s |
-| Element dedup P2 | 702 interactions | ~250 unique | 3-4s |
-| Evaluate cache P1 | Re-run per template | Cache by domHash | 0.5-1s |
-| Tier 1 cache P1 | Re-run per template | Cache by cssHash | 0.5s |
-| Scan axe cache | 33 axe runs | ~25 unique | 3-4s |
-| Speculative prefetch | Sequential nav | Pre-load + manifest cache | 2-3s |
-| P4 color-use dedup | 12 fingerprints | ~8 unique | 5-10s |
-| **Total** | **68s** | **~43-48s** | **~20-25s** |
+| Optimization | From | To | Savings | Confidence |
+|---|---|---|---|---|
+| Batch P1+P2 parallel (2 pages) | Sequential | Overlapped | 3-5s | Medium (RAM-dependent, lease-based ctx) |
+| Element dedup P2 (hover+focus only) | 702 interactions | ~250 unique h+f | 2-3s | High (click+keyboard still runs) |
+| Evaluate cache P1 | Re-run per template | Cache by domHash | 0.5-1s | High |
+| Tier 1 cache P1 | Re-run per template | Cache by cssHash | 0.5s | High |
+| Scan axe cache | 33 axe runs | ~25 unique (by template fp) | 1-2s | Medium |
+| Speculative prefetch | Sequential nav | Pre-load during P3/P4 only | 1-2s | Medium (only when batchSize=1) |
+| P4 color-use dedup | 12 fingerprints | ~8 unique | 2-5s | Medium (savings=0 on form pages where status-messages is bottleneck) |
+| **Total** | **68s** | **~52-58s** | **~10-16s** | |
+
+**Note on estimates:** Adjusted down from original 20-25s after code review identified: (1) P2 click+keyboard not cacheable, (2) scanAxeCache contentHash replaced with template fp (lower hit rate expected), (3) P4 savings only when color-use is the bottleneck in the Promise.all pair, (4) speculative prefetch only during P3+P4 to avoid 3 concurrent pages.
 
 ---
 
@@ -226,7 +324,7 @@ if (manifestCache.has(prefetched.manifestHash)) {
 
 ### 4.1 Concept
 
-First audit = full probe (~45s with Eje 1). Subsequent audits of the same site = **only test what changed**.
+First audit = full probe (~55s with Eje 1). Subsequent audits of the same site = **only test what changed**.
 
 Like `git diff`: compare hashes, process only deltas.
 
@@ -289,14 +387,35 @@ New audit for finnk.com:
       Mark as "cached" in audit_spans.
 
    b) manifestHash match, cssHash changed
-      → Skip P1 evaluate + P2 interaction (DOM same)
-      → Re-run P3 viewport + P4 capture (CSS changed)
+      Dependency matrix (per-test, not per-phase):
+      → P1 evaluate tests (targetSize, meaningfulSequence, semanticStructure): SKIP (DOM-dependent, DOM same)
+      → P1 Tier 1 CSSOM analysis: RE-RUN (CSS-dependent)
+      → P2 hover+focus styles: RE-RUN (CSS-dependent — computed styles changed)
+      → P2 click+keyboard: SKIP (behavior depends on DOM/JS, not CSS)
+      → P3 viewport: RE-RUN (CSS changed)
+      → P4 capture: RE-RUN (CSS changed)
 
    c) cssHash match, domHash changed
-      → Skip P3 + P4 (CSS same)
-      → Re-run P1 + P2 (new elements possible)
+      → P1 evaluate tests: RE-RUN (DOM changed — new headings, landmarks, form fields)
+      → P1 Tier 1 CSSOM: SKIP (CSS same)
+      → P2 hover+focus: depends on manifestHash — if same, SKIP; if changed, RE-RUN
+      → P2 click+keyboard: RE-RUN (new elements may exist)
+      → P3 viewport: SKIP (CSS same)
+      → P4 capture: SKIP (CSS same)
 
    d) No match → full probe
+
+   **Dependency matrix summary:**
+
+   | Test | Depends on |
+   |------|-----------|
+   | P1 evaluate (targetSize, sequence, structure) | domHash |
+   | P1 Tier 1 CSSOM | cssHash |
+   | P2 hover+focus styles | cssHash + manifestHash |
+   | P2 click+keyboard ARIA | domHash + manifestHash |
+   | P3 viewport (reflow, resize, text-spacing) | cssHash |
+   | P4 CVD screenshots | cssHash |
+   | P4 status-messages | domHash (forms) — NOT cacheable |
 
 4. PROBE: execute only what's needed
 
@@ -349,27 +468,28 @@ API parameter `?force=true` skips all cache lookups. Useful for:
 
 Extend existing cache patterns to remaining phases. No architectural changes.
 
-| # | Task | Savings | Complexity |
-|---|------|---------|------------|
-| 1.1 | Scan axe cache by contentHash | 3-4s | Low |
-| 1.2 | P1 evaluate cache by domHash | 0.5-1s | Low |
-| 1.3 | P1 Tier 1 cache by cssHash | 0.5s | Low |
-| 1.4 | P2 element-level cache by elementHash | 3-4s | Medium |
-| 1.5 | P4 color-use extended fingerprint | 5-10s | Medium |
+| # | Task | Savings | Complexity | Priority |
+|---|------|---------|------------|----------|
+| 1.1 | P2 element-level cache (hover+focus only) by elementHash | 2-3s | Medium | First — highest interaction count |
+| 1.2 | P4 color-use extended fingerprint | 2-5s | Medium | Second — extends existing cvdCache |
+| 1.3 | P1 Tier 1 cache by cssHash cross-page | 0.5s | Low | Third — trivial extension |
+| 1.4 | P1 evaluate cache by domHash (structural) | 0.5-1s | Low | Fourth — needs domHash definition |
+| 1.5 | Scan axe cache by template fingerprint | 1-2s | Low | Last — lowest real-world hit rate |
 
-**Target: 68s → ~50-55s**
+**Target: 68s → ~55-60s**
 
 ### Phase 2 — Batch Parallel + Prefetch (medium risk)
 
-Restructure probe loop for batch execution. Requires multi-page management.
+Restructure probe loop for batch execution. Requires lease-based ProbeContextManager with RAM guard.
 
 | # | Task | Savings | Complexity |
 |---|------|---------|------------|
-| 2.1 | Refactor probe loop: batch P1+P2 with 2 parallel pages | 5-7s | Medium-High |
-| 2.2 | Speculative manifest prefetch | 2-3s | Medium |
-| 2.3 | ProbeContextManager: support N open pages with recycling | — | Medium |
+| 2.1 | ProbeContextManager: lease-based concurrency (see §3.1) | — | Medium |
+| 2.2 | RAM guard: fallback to sequential when RSS > 80% | — | Low |
+| 2.3 | Refactor probe loop: batch P1+P2 with 2 parallel pages | 3-5s | Medium-High |
+| 2.4 | Speculative manifest prefetch (only during P3+P4, not batch) | 1-2s | Medium |
 
-**Target: ~52s → ~43-45s**
+**Target: ~57s → ~52-55s**
 
 ### Phase 3 — Cross-audit Differential (highest payoff)
 
@@ -385,7 +505,7 @@ Persist hash tree to DB. Add lookup logic and invalidation.
 | 3.6 | API: expose cache hit rate in `/api/audits/:id/performance` | — | Low |
 | 3.7 | API: `?force=true` to bypass cache | — | Low |
 
-**Target: recurrent audits ~45s → ~15-25s**
+**Target: recurrent audits ~55s → ~25-35s (80% unchanged), ~15-20s (95% unchanged)**
 
 ### Phase Order
 
@@ -401,11 +521,14 @@ Phase 3 (cross-audit)  → last, needs Phase 1 to have something to persist
 
 | Metric | Current | Phase 1 | Phase 2 | Phase 3 (recurrent) |
 |--------|---------|---------|---------|---------------------|
-| Duration (33 pages) | 68s | ~52s | ~45s | ~15-25s |
-| P2 interactions | 702 | ~250 | ~250 | ~50 (delta only) |
+| Duration (33 pages) | 68s | ~55-60s | ~52-55s | ~25-35s |
+| P2 hover+focus interactions | 702 | ~250 | ~250 | ~50 (delta only) |
+| P2 click+keyboard (always) | 702 | 702 | 702 | ~140 (delta only) |
 | P4 screenshots | 12 | ~8 | ~8 | ~2-3 (delta only) |
 | axe runs | 33 | ~25 | ~25 | ~5 (delta only) |
-| Cache hit rate | 0% | ~30% | ~35% | ~80% |
+| Cache hit rate | 0% | ~20% | ~25% | ~80% |
+
+**Note:** Estimates are conservative post-code-review. Phase 1+2 savings (~10-16s) are less dramatic than originally projected but are low-risk and compound with Phase 3. The cross-audit differential (Phase 3) remains the highest-payoff optimization for recurrent monitoring.
 
 ---
 
