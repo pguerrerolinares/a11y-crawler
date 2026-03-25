@@ -18,6 +18,7 @@ import { testStatusMessages } from "../analyzer/wcag-status-messages";
 import { testColorUse } from "../analyzer/wcag-color-use";
 import { testSensoryInstructions } from "../analyzer/wcag-sensory-instructions";
 import { testLegalA11y } from "../analyzer/wcag-legal-checks";
+import type { HoverFocusCache } from "./tier2";
 import { collectManifest, groupByFingerprint } from "./manifest";
 import { runTier1 } from "./tier1";
 import { runTier2 } from "./tier2";
@@ -67,6 +68,7 @@ export async function runProbePhase(
   const probeCtx = new ProbeContextManager(getBrowser, config.probePagesPerContext);
   const cvdCache = new Map<string, { diffPercent: number; issues: Issue[] }>();
   const viewportCache = new Map<string, Issue[]>();
+  const hfCache: HoverFocusCache = new Map();
 
   try {
     for (const cluster of templates) {
@@ -111,7 +113,7 @@ export async function runProbePhase(
             // ── Phase 2: Interaction — Tier 2, interactive tests, re-enable animations ──
             const p2Start = Date.now();
             const { issues: phase2Issues, promotedToTier3 } = await runPhase2Interaction(
-              page, promotedElements, url, timer, cluster,
+              page, promotedElements, url, timer, cluster, hfCache,
             );
             allIssues.push(...phase2Issues);
             phaseTimings.phase2InteractionMs = Date.now() - p2Start;
@@ -276,11 +278,12 @@ async function runPhase2Interaction(
   url: string,
   timer: TierTimer,
   cluster: TemplateCluster,
+  hfCache: HoverFocusCache,
 ): Promise<{ issues: Issue[]; promotedToTier3: ElementManifest[] }> {
   const issues: Issue[] = [];
 
   // Tier 2: unified interaction pass
-  const { issues: tier2Issues, promotedToTier3 } = await runTier2(page, promotedElements, url, timer);
+  const { issues: tier2Issues, promotedToTier3 } = await runTier2(page, promotedElements, url, timer, hfCache);
   issues.push(...tier2Issues);
 
   // Legacy interactive tests (minus keyboard-operability, now handled by Tier 2)

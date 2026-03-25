@@ -5,6 +5,13 @@ import type { TierTimer } from "./tier-timer";
 import { adaptiveWait, disableAnimations } from "./adaptive-wait";
 import { parseRgba, alphaBlend, relativeLuminance, contrastRatio } from "../analyzer/contrast";
 import { makeWcagIssue } from "../analyzer/utils";
+import { elementHashFromManifest } from "./probe-cache";
+
+export type HoverFocusCache = Map<string, {
+  hoverStyles: Record<string, string>;
+  focusStyles: Record<string, string>;
+  hadPopup: boolean;
+}>;
 
 export function isNativeInteractive(tag: string): boolean {
   return ["a", "button", "input", "select", "textarea", "details", "summary"].includes(tag);
@@ -286,6 +293,7 @@ export async function runTier2(
   elements: ElementManifest[],
   url: string,
   timer: TierTimer,
+  hfCache?: HoverFocusCache,
 ): Promise<{ issues: Issue[]; promotedToTier3: ElementManifest[] }> {
   timer.startTier("tier2");
   const allIssues: Issue[] = [];
@@ -301,18 +309,38 @@ export async function runTier2(
     if (!handle) continue;
 
     try {
-      // 1+2. HOVER + FOCUS — single page.evaluate roundtrip (eliminates ~10 roundtrips → 1).
-      // batchedHoverFocus dispatches mouseover/mouseout and focus/blur synchronously inside the
-      // browser, capturing styles and popup state without any IPC between each step.
-      const batched = await batchedHoverFocus(page, element.selector);
-      if (!batched) continue;
+      // 1+2. HOVER + FOCUS — check cache first, then single page.evaluate roundtrip
+      const elemHash = elementHashFromManifest(element);
+      const hfCacheKey = `hf:${elemHash}`;
+      const cachedHF = hfCache?.get(hfCacheKey);
 
-      result.hoverStyles = batched.hoverStyles;
-      result.hoverPopup = batched.hoverPopup;
-      result.focusStyles = batched.focusStyles;
-      result.focusPopup = batched.focusPopup;
-      timer.recordInteraction("hovers");
-      timer.recordInteraction("focuses");
+      if (cachedHF && !cachedHF.hadPopup) {
+        // Cache hit (no popup) — reuse styles, skip batchedHoverFocus
+        result.hoverStyles = cachedHF.hoverStyles;
+        result.focusStyles = cachedHF.focusStyles;
+        result.hoverPopup = null;
+        result.focusPopup = null;
+        timer.recordInteraction("hovers");
+        timer.recordInteraction("focuses");
+      } else {
+        // Cache miss or popup fingerprint — run real interaction
+        const batched = await batchedHoverFocus(page, element.selector);
+        if (!batched) continue;
+
+        result.hoverStyles = batched.hoverStyles;
+        result.hoverPopup = batched.hoverPopup;
+        result.focusStyles = batched.focusStyles;
+        result.focusPopup = batched.focusPopup;
+        timer.recordInteraction("hovers");
+        timer.recordInteraction("focuses");
+
+        // Store in cache (including whether popup was detected)
+        hfCache?.set(hfCacheKey, {
+          hoverStyles: result.hoverStyles ?? {},
+          focusStyles: result.focusStyles ?? {},
+          hadPopup: !!result.hoverPopup || !!result.focusPopup,
+        });
+      }
 
       // WCAG 1.4.13 sub-tests: persistence, hoverability, dismissibility.
       // Only entered on the rare path where a popup was detected.
