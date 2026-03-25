@@ -82,3 +82,20 @@ export async function collectDomStructure(page: import("playwright").Page): Prom
 export function computeTemplateHash(manifestHash: string, cssHash: string, domHash: string): string {
   return md5(`${manifestHash}|${cssHash}|${domHash}`);
 }
+
+export function computeColorUseFingerprint(
+  cssHash: string,
+  manifest: ElementManifest[],
+): string {
+  const colorElements = manifest
+    .filter(el =>
+      (el.tag === "a" && !el.hasUnderline) ||
+      el.role === "status" ||
+      el.role === "alert" ||
+      el.isFormControl
+    )
+    .map(el => `${el.tag}|${el.role}|${el.styleFingerprint}`)
+    .sort()
+    .join(";");
+  return md5(`${cssHash}:${colorElements}`);
+}

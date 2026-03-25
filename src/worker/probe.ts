@@ -27,6 +27,7 @@ import { enableAnimations } from "./adaptive-wait";
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { computeCssFingerprint } from "../analyzer/screenshot-cvd";
+import { computeColorUseFingerprint } from "./probe-cache";
 
 const TEMPLATE_LEVEL_RULES = new Set([
   "color-contrast", "color-contrast-enhanced", "heading-order",
@@ -102,6 +103,9 @@ export async function runProbePhase(
               representativeElements: styleGroups.length,
             });
 
+            // Compute cssFingerprint once per template (used by Phase 3 + Phase 4)
+            const cssFingerprint = await computeCssFingerprint(page);
+
             // ── Phase 1: Static — Tier 1, axe, evaluate tests (no DOM mutation) ──
             const p1Start = Date.now();
             const { issues: phase1Issues, promotedElements } = await runPhase1Static(
@@ -120,7 +124,7 @@ export async function runProbePhase(
 
             // ── Phase 3: Viewport — reflow, resize-text, text-spacing ──
             const p3Start = Date.now();
-            const phase3Issues = await runPhase3Viewport(page, url, cluster, viewportCache);
+            const phase3Issues = await runPhase3Viewport(page, url, cluster, viewportCache, cssFingerprint);
             allIssues.push(...phase3Issues);
             phaseTimings.phase3ViewportMs = Date.now() - p3Start;
 
@@ -128,6 +132,7 @@ export async function runProbePhase(
             const p4Start = Date.now();
             const phase4Issues = await runPhase4Capture(
               page, url, cluster, auditId, llmClient, promotedToTier3, cvdCache,
+              cssFingerprint, manifest,
             );
             allIssues.push(...phase4Issues);
             phaseTimings.phase4CaptureMs = Date.now() - p4Start;
@@ -305,6 +310,7 @@ async function runPhase3Viewport(
   url: string,
   cluster: TemplateCluster,
   viewportCache: Map<string, Issue[]>,
+  cssFingerprint: string,
 ): Promise<Issue[]> {
   const hasViewportTests = cluster.testPlan.includes("reflow") ||
     cluster.testPlan.includes("resize-text") || cluster.testPlan.includes("text-spacing");
@@ -312,7 +318,7 @@ async function runPhase3Viewport(
 
   // Viewport tests are style-dependent (CSS, not content).
   // Skip if a template with the same CSS fingerprint was already tested.
-  const fingerprint = await computeCssFingerprint(page);
+  const fingerprint = cssFingerprint;
   if (viewportCache.has(fingerprint)) {
     return viewportCache.get(fingerprint)!.map(i => ({ ...i, url, id: crypto.randomUUID() }));
   }
@@ -343,6 +349,8 @@ async function runPhase4Capture(
   llmClient: LLMClient | null,
   promotedToTier3: ElementManifest[],
   cvdCache: Map<string, { diffPercent: number; issues: Issue[] }>,
+  cssFingerprint: string,
+  manifest: ElementManifest[],
 ): Promise<Issue[]> {
   const issues: Issue[] = [];
 
@@ -357,7 +365,10 @@ async function runPhase4Capture(
     await mkdir(screenshotDir, { recursive: true });
     parallel.push(
       withTimeout(
-        testColorUse(page, url, llmClient, screenshotDir, cluster.id.slice(0, 8), cvdCache),
+        testColorUse(
+        page, url, llmClient, screenshotDir, cluster.id.slice(0, 8), cvdCache,
+        computeColorUseFingerprint(cssFingerprint, manifest),
+      ),
         45_000,
       ).then(r => r?.issues ?? []),
     );

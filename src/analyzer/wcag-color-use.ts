@@ -184,6 +184,7 @@ export async function testColorUse(
   screenshotDir?: string,
   templatePrefix?: string,
   cvdCache?: Map<string, { diffPercent: number; issues: Issue[] }>,
+  precomputedFingerprint?: string,
 ): Promise<ColorUseResult> {
   const issues: Issue[] = [];
   const screenshots: ColorUseResult["screenshots"] = [];
@@ -192,7 +193,7 @@ export async function testColorUse(
   issues.push(...await tier1DomHeuristics(page, url));
 
   // Check CSS fingerprint cache — skip Tier 2+3 if same styles already processed
-  const fingerprint = await computeCssFingerprint(page);
+  const fingerprint = precomputedFingerprint ?? await computeCssFingerprint(page);
   if (cvdCache?.has(fingerprint)) {
     const cached = cvdCache.get(fingerprint)!;
     issues.push(...cached.issues.map(i => ({ ...i, url, id: crypto.randomUUID() })));

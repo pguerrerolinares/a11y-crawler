@@ -56,3 +56,28 @@ test("computeDomHash: different headings = different hash", () => {
   const b = { selectors: "A.nav", headings: "H1,H2,H3", landmarks: "main", forms: "" };
   expect(computeDomHash(a)).not.toBe(computeDomHash(b));
 });
+
+import { computeColorUseFingerprint } from "../probe-cache";
+
+const baseEl = {
+  selector: "a.link", tag: "a", role: "link", accessibleName: "",
+  boundingBox: { x: 0, y: 0, width: 100, height: 20 },
+  hasHoverCss: false, hasAriaExpanded: false, hasAriaPressed: false,
+  hasUnderline: false, isFormControl: false, hasOnclick: false,
+  defaultStyles: { borderColor: "", outlineColor: "", backgroundColor: "", boxShadow: "", textDecorationLine: "", color: "" },
+  parentBg: "", styleFingerprint: "nav|a|",
+};
+
+test("computeColorUseFingerprint: same CSS + same color elements = same hash", () => {
+  const manifest = [{ ...baseEl }] as any;
+  const a = computeColorUseFingerprint("css123", manifest);
+  const b = computeColorUseFingerprint("css123", manifest);
+  expect(a).toBe(b);
+});
+
+test("computeColorUseFingerprint: different CSS = different hash", () => {
+  const manifest = [{ ...baseEl }] as any;
+  const a = computeColorUseFingerprint("css123", manifest);
+  const b = computeColorUseFingerprint("css456", manifest);
+  expect(a).not.toBe(b);
+});
