@@ -73,6 +73,8 @@ export async function runProbePhase(
   const tier1Cache = new Map<string, { issues: Issue[]; promotedElements: ElementManifest[] }>();
   const evaluateCache = new Map<string, Issue[]>();
 
+  const globalCacheStats = { hfHits: 0, hfMisses: 0, tier1Hits: 0, tier1Misses: 0, evalHits: 0, evalMisses: 0 };
+
   try {
     for (const cluster of templates) {
       const url = cluster.representative;
@@ -94,6 +96,7 @@ export async function runProbePhase(
 
           {
             const phaseTimings: Record<string, number> = { navigationMs };
+            const templateCacheStats = { hfHits: 0, hfMisses: 0, tier1Hits: 0, tier1Misses: 0, evalHits: 0, evalMisses: 0 };
 
             // ── Tier 0: Element Interaction Manifest (shared across Phase 1 and 2) ──
             timer.startTier("tier0");
@@ -112,7 +115,7 @@ export async function runProbePhase(
             const p1Start = Date.now();
             const { issues: phase1Issues, promotedElements } = await runPhase1Static(
               page, cluster, url, timer, styleGroups, axeCache, config, llmClient, parentSpan,
-              cssFingerprint, tier1Cache, evaluateCache,
+              cssFingerprint, tier1Cache, evaluateCache, templateCacheStats,
             );
             allIssues.push(...phase1Issues);
             phaseTimings.phase1StaticMs = Date.now() - p1Start;
@@ -120,7 +123,7 @@ export async function runProbePhase(
             // ── Phase 2: Interaction — Tier 2, interactive tests, re-enable animations ──
             const p2Start = Date.now();
             const { issues: phase2Issues, promotedToTier3 } = await runPhase2Interaction(
-              page, promotedElements, url, timer, cluster, hfCache,
+              page, promotedElements, url, timer, cluster, hfCache, templateCacheStats,
             );
             allIssues.push(...phase2Issues);
             phaseTimings.phase2InteractionMs = Date.now() - p2Start;
@@ -140,6 +143,19 @@ export async function runProbePhase(
             allIssues.push(...phase4Issues);
             phaseTimings.phase4CaptureMs = Date.now() - p4Start;
             phaseTimings.totalTemplateMs = Date.now() - gotoStart;
+            phaseTimings.cacheHfHits = templateCacheStats.hfHits;
+            phaseTimings.cacheHfMisses = templateCacheStats.hfMisses;
+            phaseTimings.cacheTier1Hits = templateCacheStats.tier1Hits;
+            phaseTimings.cacheTier1Misses = templateCacheStats.tier1Misses;
+            phaseTimings.cacheEvalHits = templateCacheStats.evalHits;
+            phaseTimings.cacheEvalMisses = templateCacheStats.evalMisses;
+
+            globalCacheStats.hfHits += templateCacheStats.hfHits;
+            globalCacheStats.hfMisses += templateCacheStats.hfMisses;
+            globalCacheStats.tier1Hits += templateCacheStats.tier1Hits;
+            globalCacheStats.tier1Misses += templateCacheStats.tier1Misses;
+            globalCacheStats.evalHits += templateCacheStats.evalHits;
+            globalCacheStats.evalMisses += templateCacheStats.evalMisses;
 
             parentSpan.setMeta({ phaseTimings });
           }
@@ -214,6 +230,7 @@ export async function runProbePhase(
         }
       });
     }
+    console.log(`[probe] Cache stats — hf: ${globalCacheStats.hfHits}/${globalCacheStats.hfHits + globalCacheStats.hfMisses} hits, tier1: ${globalCacheStats.tier1Hits}/${globalCacheStats.tier1Hits + globalCacheStats.tier1Misses}, eval: ${globalCacheStats.evalHits}/${globalCacheStats.evalHits + globalCacheStats.evalMisses}`);
   } finally {
     await probeCtx.close();
   }
@@ -234,16 +251,19 @@ async function runPhase1Static(
   cssFingerprint: string,
   tier1Cache: Map<string, { issues: Issue[]; promotedElements: ElementManifest[] }>,
   evaluateCache: Map<string, Issue[]>,
+  cacheStats: { hfHits: number; hfMisses: number; tier1Hits: number; tier1Misses: number; evalHits: number; evalMisses: number },
 ): Promise<{ issues: Issue[]; promotedElements: ElementManifest[] }> {
   const issues: Issue[] = [];
 
   // Tier 1: CSSOM hover contrast (cache by cssFingerprint — same CSS = same CSSOM results)
   let promotedElements: ElementManifest[];
   if (tier1Cache.has(cssFingerprint)) {
+    cacheStats.tier1Hits++;
     const cached = tier1Cache.get(cssFingerprint)!;
     issues.push(...cached.issues.map(i => ({ ...i, url, id: crypto.randomUUID() })));
     promotedElements = cached.promotedElements;
   } else {
+    cacheStats.tier1Misses++;
     const { issues: tier1Issues, promotedElements: promoted } = await runTier1(page, styleGroups, url, timer);
     issues.push(...tier1Issues);
     promotedElements = promoted;
@@ -274,8 +294,10 @@ async function runPhase1Static(
   const domHash = computeDomHash(domStructure);
 
   if (evaluateCache.has(domHash)) {
+    cacheStats.evalHits++;
     issues.push(...evaluateCache.get(domHash)!.map(i => ({ ...i, url, id: crypto.randomUUID() })));
   } else {
+    cacheStats.evalMisses++;
     const evaluateTests: Promise<Issue[]>[] = [];
     if (cluster.testPlan.includes("target-size")) evaluateTests.push(testTargetSize(page, url));
     if (cluster.testPlan.includes("multimedia")) evaluateTests.push(testMultimedia(page, url));
@@ -308,11 +330,14 @@ async function runPhase2Interaction(
   timer: TierTimer,
   cluster: TemplateCluster,
   hfCache: HoverFocusCache,
+  cacheStats: { hfHits: number; hfMisses: number; tier1Hits: number; tier1Misses: number; evalHits: number; evalMisses: number },
 ): Promise<{ issues: Issue[]; promotedToTier3: ElementManifest[] }> {
   const issues: Issue[] = [];
 
   // Tier 2: unified interaction pass
-  const { issues: tier2Issues, promotedToTier3 } = await runTier2(page, promotedElements, url, timer, hfCache);
+  const { issues: tier2Issues, promotedToTier3, hfHits, hfMisses } = await runTier2(page, promotedElements, url, timer, hfCache);
+  cacheStats.hfHits += hfHits;
+  cacheStats.hfMisses += hfMisses;
   issues.push(...tier2Issues);
 
   // Legacy interactive tests (minus keyboard-operability, now handled by Tier 2)

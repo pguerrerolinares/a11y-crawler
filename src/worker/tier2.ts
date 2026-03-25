@@ -294,10 +294,12 @@ export async function runTier2(
   url: string,
   timer: TierTimer,
   hfCache?: HoverFocusCache,
-): Promise<{ issues: Issue[]; promotedToTier3: ElementManifest[] }> {
+): Promise<{ issues: Issue[]; promotedToTier3: ElementManifest[]; hfHits: number; hfMisses: number }> {
   timer.startTier("tier2");
   const allIssues: Issue[] = [];
   const promotedToTier3: ElementManifest[] = [];
+  let hfHits = 0;
+  let hfMisses = 0;
 
   // Disable CSS animations/transitions so hover/focus style changes are instantaneous.
   // We only need final computed styles, not animation timing.
@@ -316,6 +318,7 @@ export async function runTier2(
 
       if (cachedHF && !cachedHF.hadPopup) {
         // Cache hit (no popup) — reuse styles, skip batchedHoverFocus
+        hfHits++;
         result.hoverStyles = cachedHF.hoverStyles;
         result.focusStyles = cachedHF.focusStyles;
         result.hoverPopup = null;
@@ -324,6 +327,7 @@ export async function runTier2(
         timer.recordInteraction("focuses");
       } else {
         // Cache miss or popup fingerprint — run real interaction
+        hfMisses++;
         const batched = await batchedHoverFocus(page, element.selector);
         if (!batched) continue;
 
@@ -476,5 +480,5 @@ export async function runTier2(
     avgWaitMs: 150,
   });
 
-  return { issues: allIssues, promotedToTier3 };
+  return { issues: allIssues, promotedToTier3, hfHits, hfMisses };
 }
