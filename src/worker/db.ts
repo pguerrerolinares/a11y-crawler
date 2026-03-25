@@ -34,6 +34,7 @@ async function runWorkerMigrations(): Promise<void> {
       await tx.unsafe(`ALTER TABLE audits ADD COLUMN IF NOT EXISTS coverage JSONB`);
       await tx.unsafe(`ALTER TABLE audits ADD COLUMN IF NOT EXISTS regression JSONB`);
       await tx.unsafe(`CREATE UNIQUE INDEX IF NOT EXISTS idx_pages_audit_url ON pages(audit_id, url)`);
+      // @ts-expect-error postgres TransactionSql template literal callable at runtime
       await tx`INSERT INTO migrations (id) VALUES ('v4-pipeline-columns')`;
     });
     console.log("Migration v4-pipeline-columns applied");
@@ -43,6 +44,7 @@ async function runWorkerMigrations(): Promise<void> {
     console.log("Running migration: v4.3-llm-confidence");
     await db.begin(async (tx) => {
       await tx.unsafe(`ALTER TABLE issues ADD COLUMN IF NOT EXISTS llm_confidence TEXT`);
+      // @ts-expect-error postgres TransactionSql template literal callable at runtime
       await tx`INSERT INTO migrations (id) VALUES ('v4.3-llm-confidence')`;
     });
     console.log("Migration v4.3-llm-confidence applied");
@@ -55,6 +57,7 @@ async function runWorkerMigrations(): Promise<void> {
       await tx.unsafe(`CREATE INDEX IF NOT EXISTS idx_issues_audit_rule ON issues(audit_id, rule)`);
       await tx.unsafe(`CREATE INDEX IF NOT EXISTS idx_issues_audit_source ON issues(audit_id, check_source)`);
       await tx.unsafe(`CREATE INDEX IF NOT EXISTS idx_issues_page ON issues(page_id)`);
+      // @ts-expect-error postgres TransactionSql template literal callable at runtime
       await tx`INSERT INTO migrations (id) VALUES ('v4.4-issues-indexes')`;
     });
     console.log("Migration v4.4-issues-indexes applied");

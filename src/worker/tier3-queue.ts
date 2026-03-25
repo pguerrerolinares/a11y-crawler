@@ -118,7 +118,7 @@ export async function processTier3Queue(
           const prompt = renderPrompt(promptType, elementsDescription);
 
           // Build multimodal messages with crops
-          const imageContent: unknown[] = [];
+          const imageContent: Array<{ type: "image_url"; image_url: { url: string; detail: "low" | "high" | "auto" } }> = [];
           for (const el of uncachedBatch) {
             if (el.cropBase64) {
               imageContent.push({

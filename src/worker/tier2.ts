@@ -155,7 +155,7 @@ export function evaluateKeyboard(
 async function captureAriaStates(page: Page, selector: string): Promise<Record<string, string | null>> {
   return await page.evaluate((sel) => {
     const el = document.querySelector(sel);
-    if (!el) return {};
+    if (!el) return { "aria-expanded": null, "aria-pressed": null, "aria-selected": null, "aria-checked": null };
     return {
       "aria-expanded": el.getAttribute("aria-expanded"),
       "aria-pressed": el.getAttribute("aria-pressed"),

@@ -123,7 +123,7 @@ async function exportPdf(auditId: string, url: URL): Promise<Response> {
     const date = new Date().toISOString().slice(0, 10);
     const filename = `audit-${auditId.slice(0, 8)}-${date}-${detail}.pdf`;
 
-    return new Response(pdfBuffer, {
+    return new Response(pdfBuffer as unknown as BodyInit, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="${filename}"`,

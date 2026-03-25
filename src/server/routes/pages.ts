@@ -40,14 +40,14 @@ async function getPage(id: string): Promise<Response> {
 
 function mapPageRow(row: Record<string, unknown>): PageResponse {
   return {
-    id: row.id,
-    auditId: row.audit_id,
-    url: row.url,
-    title: row.title,
-    statusCode: row.status_code,
-    issueCount: row.issue_count,
-    issuesByImpact: row.issues_by_impact,
-    durationMs: row.duration_ms,
-    createdAt: row.created_at,
+    id: row.id as string,
+    auditId: row.audit_id as string,
+    url: row.url as string,
+    title: row.title as string | null,
+    statusCode: row.status_code as number | null,
+    issueCount: row.issue_count as number,
+    issuesByImpact: row.issues_by_impact as Record<string, number> | null,
+    durationMs: row.duration_ms as number | null,
+    createdAt: row.created_at as string,
   };
 }

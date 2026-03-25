@@ -216,7 +216,7 @@ export async function runPipeline(
         { totalUrlsDiscovered: scanResults.size, urlsFromSitemap: 0, urlsFromLinks: scanResults.size, urlsFromInteraction: 0 },
         (llmClient?.usage ?? { totalCalls: 0, totalInputTokens: 0, totalOutputTokens: 0, navigationCalls: 0, enrichmentCalls: 0, visionCalls: 0 }) as unknown as Record<string, unknown>,
         durationSeconds,
-        wcagScore,
+        wcagScore ?? 0,
         crawlErrors.length > 0 ? crawlErrors : null,
         serializedClusters,
         null,

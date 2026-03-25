@@ -18,7 +18,7 @@ export async function disableAnimations(page: Page): Promise<void> {
       }
     `,
   });
-  await handle.evaluate(el => el.setAttribute('data-disable-animations', 'true'));
+  await handle.evaluate(el => (el as HTMLElement).setAttribute('data-disable-animations', 'true'));
 }
 
 /**

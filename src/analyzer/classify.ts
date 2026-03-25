@@ -16,7 +16,7 @@ export function clusterPages(scanResults: ScanResult[]): TemplateCluster[] {
       match.axeIssues.push(...result.axeIssues);
       for (const key of Object.keys(result.capabilities) as Array<keyof typeof result.capabilities>) {
         if (result.capabilities[key]) {
-          (match.capabilities as Record<string, boolean>)[key] = true;
+          (match.capabilities as unknown as Record<string, boolean>)[key] = true;
         }
       }
     } else {
