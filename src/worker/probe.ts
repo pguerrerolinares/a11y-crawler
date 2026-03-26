@@ -70,7 +70,7 @@ export async function runProbePhase(
   const cvdCache = new Map<string, { diffPercent: number; issues: Issue[] }>();
   const viewportCache = new Map<string, Issue[]>();
   const hfCache: HoverFocusCache = new Map();
-  const tier1Cache = new Map<string, { issues: Issue[]; promotedElements: ElementManifest[] }>();
+  const tier1Cache = new Map<string, { issues: Issue[] }>();
   const evaluateCache = new Map<string, Issue[]>();
 
   const globalCacheStats = { hfHits: 0, hfMisses: 0, tier1Hits: 0, tier1Misses: 0, evalHits: 0, evalMisses: 0 };
@@ -249,25 +249,30 @@ async function runPhase1Static(
   llmClient: LLMClient | null,
   parentSpan: { setMeta: (m: Record<string, unknown>) => void },
   cssFingerprint: string,
-  tier1Cache: Map<string, { issues: Issue[]; promotedElements: ElementManifest[] }>,
+  tier1Cache: Map<string, { issues: Issue[] }>,
   evaluateCache: Map<string, Issue[]>,
   cacheStats: { hfHits: number; hfMisses: number; tier1Hits: number; tier1Misses: number; evalHits: number; evalMisses: number },
 ): Promise<{ issues: Issue[]; promotedElements: ElementManifest[] }> {
   const issues: Issue[] = [];
 
   // Tier 1: CSSOM hover contrast (cache by cssFingerprint — same CSS = same CSSOM results)
+  // Cache only issues, NOT promotedElements — cached selectors from template A
+  // would not reference correct DOM elements on template B's page.
+  // On cache hit, promote all elements from current manifest (conservative: more
+  // elements go to Tier 2, but no false negatives from stale selectors).
   let promotedElements: ElementManifest[];
   if (tier1Cache.has(cssFingerprint)) {
     cacheStats.tier1Hits++;
     const cached = tier1Cache.get(cssFingerprint)!;
     issues.push(...cached.issues.map(i => ({ ...i, url, id: crypto.randomUUID() })));
-    promotedElements = cached.promotedElements;
+    // Promote all elements from current template's manifest (conservative)
+    promotedElements = styleGroups.flatMap(g => g.members);
   } else {
     cacheStats.tier1Misses++;
     const { issues: tier1Issues, promotedElements: promoted } = await runTier1(page, styleGroups, url, timer);
     issues.push(...tier1Issues);
     promotedElements = promoted;
-    tier1Cache.set(cssFingerprint, { issues: tier1Issues, promotedElements: promoted });
+    tier1Cache.set(cssFingerprint, { issues: tier1Issues });
   }
 
   // axe-core (from cache or fallback)
@@ -289,13 +294,15 @@ async function runPhase1Static(
     parentSpan.setMeta({ errorIdViolations: errorIdIssues.length });
   }
 
-  // page.evaluate()-only tests (parallel, read-only) — cache by domHash
+  // page.evaluate()-only tests (parallel, read-only) — cache by domHash + testPlan
   const domStructure = await collectDomStructure(page);
-  const domHash = computeDomHash(domStructure);
+  const evalTestNames = (["target-size","multimedia","timed-events","non-text-contrast","meaningful-sequence","semantic-structure","legal-a11y"] as const)
+    .filter(t => cluster.testPlan.includes(t as any)).join(",");
+  const evalCacheKey = computeDomHash(domStructure) + ":" + evalTestNames;
 
-  if (evaluateCache.has(domHash)) {
+  if (evaluateCache.has(evalCacheKey)) {
     cacheStats.evalHits++;
-    issues.push(...evaluateCache.get(domHash)!.map(i => ({ ...i, url, id: crypto.randomUUID() })));
+    issues.push(...evaluateCache.get(evalCacheKey)!.map(i => ({ ...i, url, id: crypto.randomUUID() })));
   } else {
     cacheStats.evalMisses++;
     const evaluateTests: Promise<Issue[]>[] = [];
@@ -309,7 +316,7 @@ async function runPhase1Static(
     const evalResults = await Promise.all(evaluateTests);
     const evalIssues = evalResults.flat();
     issues.push(...evalIssues);
-    evaluateCache.set(domHash, evalIssues);
+    evaluateCache.set(evalCacheKey, evalIssues);
   }
 
   // Sensory instructions (LLM text analysis — can run during static phase)
