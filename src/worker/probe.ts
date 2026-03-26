@@ -175,24 +175,27 @@ export async function runProbePhase(
         } else {
           // Sequential: optionally prefetch next template's navigation during P3+P4
           const hasNextTemplate = i < templates.length - 1;
-          // Use a container object so the async callback mutation is visible across the await boundary
-          const prefetchSlot: { lease: PageLease | null } = { lease: null };
+
+          // Track the prefetch as a Promise so we can safely await/cleanup regardless of timing
+          let prefetchPromise: Promise<PageLease | null> = Promise.resolve(null);
 
           if (hasNextTemplate) {
             const nextUrl = templates[i + 1].representative;
-            // Fire-and-forget: errors are non-fatal, falls back to normal nav
-            probeCtx.lease().then(async (pLease) => {
+            prefetchPromise = (async () => {
               try {
-                await pLease.page.goto(nextUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
-                await injectConsentPrehideCSS(pLease.page);
-                prefetchSlot.lease = pLease;
+                const pLease = await probeCtx.lease();
+                try {
+                  await pLease.page.goto(nextUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+                  await injectConsentPrehideCSS(pLease.page);
+                  return pLease; // Success — return the lease
+                } catch {
+                  await pLease.release();
+                  return null;
+                }
               } catch {
-                // Prefetch failure is non-fatal — next iteration navigates normally
-                await pLease.release();
+                return null; // lease() itself failed
               }
-            }).catch(() => {
-              // lease() itself failed — ignore
-            });
+            })();
           }
 
           // Run P3+P4 while prefetch happens concurrently
@@ -207,9 +210,19 @@ export async function runProbePhase(
           );
           await lease.release();
 
-          // Store prefetch result for the next iteration (may still be null if prefetch
-          // was still in-flight or failed — next iteration will navigate normally)
-          pendingPrefetchLease = prefetchSlot.lease;
+          // Wait for prefetch with a 100ms grace period.
+          // If the goto didn't finish in time, detach a cleanup so the lease is always released.
+          const prefetched = await Promise.race([
+            prefetchPromise,
+            new Promise<null>((r) => setTimeout(() => r(null), 100)),
+          ]);
+
+          if (prefetched) {
+            pendingPrefetchLease = prefetched;
+          } else {
+            // Prefetch didn't finish in time or failed — release it when it eventually resolves
+            prefetchPromise.then((p) => p?.release()).catch(() => {});
+          }
         }
       } catch (err) {
         // Clean up all leases on error
@@ -254,6 +267,10 @@ export async function runProbePhase(
     if (pendingMutating) {
       await pendingMutating.promise.catch(() => {});
       await pendingMutating.lease.release();
+    }
+    if (pendingPrefetchLease) {
+      await pendingPrefetchLease.release();
+      pendingPrefetchLease = null;
     }
     await probeCtx.close();
   }
@@ -471,7 +488,7 @@ async function finalizeTemplate(
   }
 
   // Record span with all metadata and flush
-  const span = tracer.startSpan("probe:representative");
+  const span = tracer.startSpan("probe:representative", null, new Date(readOnlyResult.wallClockStart));
   span.setMeta({
     ...readOnlyResult.spanMeta,
     url,

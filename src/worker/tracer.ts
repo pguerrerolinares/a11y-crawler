@@ -3,7 +3,7 @@ import type { SpanRecord, SpanStatus } from "../types/pipeline";
 
 export class Span {
   readonly spanId = randomUUID();
-  readonly startedAt = new Date();
+  readonly startedAt: Date;
   private endedAt: Date | null = null;
   private status: SpanStatus = "ok";
   private errorMessage: string | null = null;
@@ -14,7 +14,10 @@ export class Span {
     readonly traceId: string,
     readonly name: string,
     readonly parentSpanId: string | null = null,
-  ) {}
+    startedAt?: Date,
+  ) {
+    this.startedAt = startedAt ?? new Date();
+  }
 
   setMeta(data: Record<string, unknown>): this {
     Object.assign(this.meta, data);
@@ -76,8 +79,8 @@ export class AuditTracer {
    * Open a span manually. Caller is responsible for calling span.end() and tracer.flush().
    * Use this when span lifetime crosses async boundaries (e.g. overlapping probe loop).
    */
-  startSpan(name: string, parent?: string): Span {
-    const span = new Span(this.auditId, this.traceId, name, parent ?? null);
+  startSpan(name: string, parent?: string | null, startedAt?: Date): Span {
+    const span = new Span(this.auditId, this.traceId, name, parent ?? null, startedAt);
     this.spans.push(span);
     return span;
   }
