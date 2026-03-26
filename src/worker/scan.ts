@@ -33,6 +33,9 @@ export async function runScanPhase(
   const scanResults = new Map<string, ScanResult>();
   const allLinks = new Map<string, string[]>();
   const crawlErrors: CrawlError[] = [];
+  // Dedup axe by fingerprint — pages with same structure produce same axe results
+  // Uses Promise-based cache to handle concurrent scan pages with same fingerprint
+  const axeFingerprintCache = new Map<string, Promise<Issue[]>>();
 
   async function scanPage(url: string): Promise<void> {
     const slot = await pool.acquire();
@@ -128,41 +131,57 @@ export async function runScanPhase(
             };
           };
 
-          // axe-core FULL — all WCAG AA rules (results cached for probe phase reuse)
+          // axe-core FULL — dedup by fingerprint (same structure = same axe results)
+          // Promise-based cache handles concurrent pages with same fingerprint:
+          // first page runs axe and stores the Promise, others await it.
           let axeIssues: Issue[] = [];
-          try {
-            const axeResults = await new AxeBuilder({ page })
-              .setLegacyMode(true)
-              .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
-              .options({ resultTypes: ["violations", "incomplete"] })
-              .analyze();
+          const fp = domData.fingerprint;
+          if (axeFingerprintCache.has(fp)) {
+            // Await the (possibly in-flight) axe results, remap to this page
+            const cached = await axeFingerprintCache.get(fp)!;
+            axeIssues = cached.map(i => ({
+              ...i, url: finalUrl, id: crypto.randomUUID(), pageTitle: domData.title,
+            }));
+          } else {
+            // First page with this fingerprint — run axe and store as Promise
+            const axePromise = (async (): Promise<Issue[]> => {
+              try {
+                const axeResults = await new AxeBuilder({ page })
+                  .setLegacyMode(true)
+                  .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+                  .options({ resultTypes: ["violations", "incomplete"] })
+                  .analyze();
 
-            axeIssues = axeResults.violations.flatMap((v) =>
-              v.nodes.map((node) => ({
-                id: crypto.randomUUID(),
-                url: finalUrl,
-                rule: v.id,
-                impact: (v.impact ?? "minor") as Issue["impact"],
-                description: node.failureSummary ? `${v.description}. ${node.failureSummary}` : v.description,
-                help: v.help,
-                helpUrl: v.helpUrl,
-                wcagTags: v.tags,
-                selector: node.target.join(", "),
-                html: node.html,
-                surroundingHtml: "",
-                xpath: "",
-                viewportWidth: 1280,
-                pageTitle: domData.title,
-                checkSource: "axe" as const,
-                suggestedFix: node.failureSummary ?? "",
-                fixConfidence: null,
-                llmConfidence: null,
-                wcagCriterion: "",
-                violationCategory: "structural" as const,
-              })),
-            );
-          } catch {
-            // axe failure is non-fatal
+                return axeResults.violations.flatMap((v) =>
+                  v.nodes.map((node) => ({
+                    id: crypto.randomUUID(),
+                    url: finalUrl,
+                    rule: v.id,
+                    impact: (v.impact ?? "minor") as Issue["impact"],
+                    description: node.failureSummary ? `${v.description}. ${node.failureSummary}` : v.description,
+                    help: v.help,
+                    helpUrl: v.helpUrl,
+                    wcagTags: v.tags,
+                    selector: node.target.join(", "),
+                    html: node.html,
+                    surroundingHtml: "",
+                    xpath: "",
+                    viewportWidth: 1280,
+                    pageTitle: domData.title,
+                    checkSource: "axe" as const,
+                    suggestedFix: node.failureSummary ?? "",
+                    fixConfidence: null,
+                    llmConfidence: null,
+                    wcagCriterion: "",
+                    violationCategory: "structural" as const,
+                  })),
+                );
+              } catch {
+                return []; // axe failure is non-fatal
+              }
+            })();
+            axeFingerprintCache.set(fp, axePromise);
+            axeIssues = await axePromise;
           }
 
           // LLM nav discovery fallback for SPA shells
