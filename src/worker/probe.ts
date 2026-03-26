@@ -117,19 +117,28 @@ export async function runProbePhase(
   const globalCacheStats: CacheStats = { hfHits: 0, hfMisses: 0, tier1Hits: 0, tier1Misses: 0, evalHits: 0, evalMisses: 0 };
 
   let pendingMutating: PendingMutating | null = null;
+  let pendingPrefetchLease: PageLease | null = null;
 
   try {
     for (let i = 0; i < templates.length; i++) {
       const cluster = templates[i];
       const url = cluster.representative;
 
-      // Acquire a new lease for the current template's read-only phases
-      const lease = await probeCtx.lease();
+      // Acquire a lease — reuse prefetched page if available (already navigated)
+      let lease: PageLease;
+      let skipNavigation = false;
+      if (pendingPrefetchLease) {
+        lease = pendingPrefetchLease;
+        pendingPrefetchLease = null;
+        skipNavigation = true;
+      } else {
+        lease = await probeCtx.lease();
+      }
 
       try {
         const readOnlyResult = await runReadOnlyPhases(
           lease.page, cluster, url, auditId, config, llmClient,
-          tier1Cache, evaluateCache, hfCache, axeCache,
+          tier1Cache, evaluateCache, hfCache, axeCache, skipNavigation,
         );
 
         // Finalize the PREVIOUS template now that read-only phases of the current one are done.
@@ -164,7 +173,29 @@ export async function runProbePhase(
           };
           // Do NOT release lease here — runMutatingPhases is still using the page
         } else {
-          // Sequential: run P3+P4 now, then finalize
+          // Sequential: optionally prefetch next template's navigation during P3+P4
+          const hasNextTemplate = i < templates.length - 1;
+          // Use a container object so the async callback mutation is visible across the await boundary
+          const prefetchSlot: { lease: PageLease | null } = { lease: null };
+
+          if (hasNextTemplate) {
+            const nextUrl = templates[i + 1].representative;
+            // Fire-and-forget: errors are non-fatal, falls back to normal nav
+            probeCtx.lease().then(async (pLease) => {
+              try {
+                await pLease.page.goto(nextUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+                await injectConsentPrehideCSS(pLease.page);
+                prefetchSlot.lease = pLease;
+              } catch {
+                // Prefetch failure is non-fatal — next iteration navigates normally
+                await pLease.release();
+              }
+            }).catch(() => {
+              // lease() itself failed — ignore
+            });
+          }
+
+          // Run P3+P4 while prefetch happens concurrently
           const mutatingResult = await runMutatingPhases(
             lease.page, cluster, url, auditId, llmClient,
             readOnlyResult.promotedToTier3, readOnlyResult.manifest,
@@ -175,17 +206,31 @@ export async function runProbePhase(
             auditId, lease.page, tracer, globalCacheStats, false,
           );
           await lease.release();
+
+          // Store prefetch result for the next iteration (may still be null if prefetch
+          // was still in-flight or failed — next iteration will navigate normally)
+          pendingPrefetchLease = prefetchSlot.lease;
         }
       } catch (err) {
-        // Clean up both leases on error
+        // Clean up all leases on error
         if (pendingMutating) {
           await pendingMutating.promise.catch(() => {});
           await pendingMutating.lease.release();
           pendingMutating = null;
         }
+        if (pendingPrefetchLease) {
+          await pendingPrefetchLease.release();
+          pendingPrefetchLease = null;
+        }
         await lease.release();
         throw err;
       }
+    }
+
+    // Release any unused prefetch lease (e.g. loop ended before reuse)
+    if (pendingPrefetchLease) {
+      await pendingPrefetchLease.release();
+      pendingPrefetchLease = null;
     }
 
     // Finalize the last template if it was left pending
@@ -227,16 +272,24 @@ async function runReadOnlyPhases(
   evaluateCache: Map<string, Issue[]> | undefined,
   hfCache: HoverFocusCache | undefined,
   axeCache: Map<string, Issue[]> | undefined,
+  skipNavigation = false,
 ): Promise<ReadOnlyResult> {
   const wallClockStart = Date.now();
   const timer = new TierTimer(auditId, cluster.id, url);
   const templateCacheStats: CacheStats = { hfHits: 0, hfMisses: 0, tier1Hits: 0, tier1Misses: 0, evalHits: 0, evalMisses: 0 };
   const phaseTimings: Record<string, number> = {};
 
-  const gotoStart = Date.now();
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await injectConsentPrehideCSS(page);
-  phaseTimings.navigationMs = Date.now() - gotoStart;
+  if (skipNavigation) {
+    // Page was already navigated by speculative prefetch
+    phaseTimings.navigationMs = 0;
+    phaseTimings.prefetchUsed = 1;
+  } else {
+    const gotoStart = Date.now();
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await injectConsentPrehideCSS(page);
+    phaseTimings.navigationMs = Date.now() - gotoStart;
+    phaseTimings.prefetchUsed = 0;
+  }
 
   // ── Tier 0: Element Interaction Manifest ──
   timer.startTier("tier0");
