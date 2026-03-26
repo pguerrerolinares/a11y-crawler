@@ -135,6 +135,9 @@ export async function runProbePhase(
         lease = await probeCtx.lease();
       }
 
+      // Hoisted for cleanup in catch block
+      let activePrefetchPromise: Promise<PageLease | null> = Promise.resolve(null);
+
       try {
         const readOnlyResult = await runReadOnlyPhases(
           lease.page, cluster, url, auditId, config, llmClient,
@@ -176,12 +179,9 @@ export async function runProbePhase(
           // Sequential: optionally prefetch next template's navigation during P3+P4
           const hasNextTemplate = i < templates.length - 1;
 
-          // Track the prefetch as a Promise so we can safely await/cleanup regardless of timing
-          let prefetchPromise: Promise<PageLease | null> = Promise.resolve(null);
-
           if (hasNextTemplate) {
             const nextUrl = templates[i + 1].representative;
-            prefetchPromise = (async () => {
+            activePrefetchPromise = (async () => {
               try {
                 const pLease = await probeCtx.lease();
                 try {
@@ -210,22 +210,16 @@ export async function runProbePhase(
           );
           await lease.release();
 
-          // Wait for prefetch with a 100ms grace period.
-          // If the goto didn't finish in time, detach a cleanup so the lease is always released.
-          const prefetched = await Promise.race([
-            prefetchPromise,
-            new Promise<null>((r) => setTimeout(() => r(null), 100)),
-          ]);
-
+          // Await prefetch directly — P3+P4 already completed, so this just waits
+          // for the (likely already finished) navigation of the next template.
+          const prefetched = await activePrefetchPromise;
           if (prefetched) {
             pendingPrefetchLease = prefetched;
-          } else {
-            // Prefetch didn't finish in time or failed — release it when it eventually resolves
-            prefetchPromise.then((p) => p?.release()).catch(() => {});
           }
+          // If null, prefetch failed — next iteration navigates normally
         }
       } catch (err) {
-        // Clean up all leases on error
+        // Clean up all leases on error (including in-flight prefetch)
         if (pendingMutating) {
           await pendingMutating.promise.catch(() => {});
           await pendingMutating.lease.release();
@@ -235,6 +229,8 @@ export async function runProbePhase(
           await pendingPrefetchLease.release();
           pendingPrefetchLease = null;
         }
+        // Clean up in-flight prefetch that hasn't been assigned to pendingPrefetchLease yet
+        activePrefetchPromise.then((p) => p?.release()).catch(() => {});
         await lease.release();
         throw err;
       }
