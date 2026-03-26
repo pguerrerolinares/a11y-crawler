@@ -72,6 +72,16 @@ export class AuditTracer {
     }
   }
 
+  /**
+   * Open a span manually. Caller is responsible for calling span.end() and tracer.flush().
+   * Use this when span lifetime crosses async boundaries (e.g. overlapping probe loop).
+   */
+  startSpan(name: string, parent?: string): Span {
+    const span = new Span(this.auditId, this.traceId, name, parent ?? null);
+    this.spans.push(span);
+    return span;
+  }
+
   async flush(): Promise<void> {
     if (this.spans.length === 0) return;
     await this.persistFn(this.spans.map((s) => s.toRecord()));

@@ -5,6 +5,7 @@ import type { TemplateCluster, PipelineConfig } from "../types/pipeline";
 import type { ElementManifest, StyleGroup } from "../types/manifest";
 import { AxeBuilder } from "@axe-core/playwright";
 import { ProbeContextManager } from "./probe-context";
+import type { PageLease } from "./probe-context";
 import { insertPageV4, insertIssuesV4 } from "./db-pages";
 import { insertTier3Job } from "./db-tier3";
 import { injectConsentPrehideCSS } from "../analyzer/consent-blocker";
@@ -28,6 +29,7 @@ import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { computeCssFingerprint } from "../analyzer/screenshot-cvd";
 import { computeColorUseFingerprint, collectDomStructure, computeDomHash } from "./probe-cache";
+import { shouldBatch } from "./ram-guard";
 
 const TEMPLATE_LEVEL_RULES = new Set([
   "color-contrast", "color-contrast-enhanced", "heading-order",
@@ -57,6 +59,42 @@ const TEMPLATE_LEVEL_RULES = new Set([
 const withTimeout = <T>(fn: Promise<T>, ms = 30_000): Promise<T | null> =>
   Promise.race([fn, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
 
+// ── Types for overlapping loop ──
+
+interface ReadOnlyResult {
+  issues: Issue[];
+  promotedToTier3: ElementManifest[];
+  manifest: ElementManifest[];
+  cssFingerprint: string;
+  phaseTimings: Record<string, number>;
+  timer: TierTimer;
+  templateCacheStats: CacheStats;
+  pageTitle: string;
+}
+
+interface MutatingResult {
+  issues: Issue[];
+  phaseTimings: Record<string, number>;
+}
+
+interface CacheStats {
+  hfHits: number;
+  hfMisses: number;
+  tier1Hits: number;
+  tier1Misses: number;
+  evalHits: number;
+  evalMisses: number;
+}
+
+interface PendingMutating {
+  promise: Promise<MutatingResult>;
+  lease: PageLease;
+  cluster: TemplateCluster;
+  url: string;
+  readOnlyResult: ReadOnlyResult;
+  overlapped: boolean;
+}
+
 export async function runProbePhase(
   getBrowser: () => Promise<Browser>,
   auditId: string,
@@ -74,167 +112,324 @@ export async function runProbePhase(
   const tier1Cache = cacheEnabled ? new Map<string, { issues: Issue[] }>() : undefined;
   const evaluateCache = cacheEnabled ? new Map<string, Issue[]>() : undefined;
 
-  const globalCacheStats = { hfHits: 0, hfMisses: 0, tier1Hits: 0, tier1Misses: 0, evalHits: 0, evalMisses: 0 };
+  const globalCacheStats: CacheStats = { hfHits: 0, hfMisses: 0, tier1Hits: 0, tier1Misses: 0, evalHits: 0, evalMisses: 0 };
+
+  let pendingMutating: PendingMutating | null = null;
 
   try {
-    for (const cluster of templates) {
+    for (let i = 0; i < templates.length; i++) {
+      const cluster = templates[i];
       const url = cluster.representative;
 
-      await tracer.trace("probe:representative", async (parentSpan) => {
-        parentSpan.setMeta({ url, templateId: cluster.id, testPlan: cluster.testPlan });
+      // Acquire a new lease for the current template's read-only phases
+      const lease = await probeCtx.lease();
 
-        const context = await probeCtx.get();
-        const page = await context.newPage();
-        const timer = new TierTimer(auditId, cluster.id, url);
+      try {
+        const readOnlyResult = await runReadOnlyPhases(
+          lease.page, cluster, url, auditId, config, llmClient,
+          tier1Cache, evaluateCache, hfCache, axeCache,
+        );
 
-        try {
-          const gotoStart = Date.now();
-          await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-          await injectConsentPrehideCSS(page);
-          const navigationMs = Date.now() - gotoStart;
-
-          const allIssues: Issue[] = [];
-
-          {
-            const phaseTimings: Record<string, number> = { navigationMs };
-            const templateCacheStats = { hfHits: 0, hfMisses: 0, tier1Hits: 0, tier1Misses: 0, evalHits: 0, evalMisses: 0 };
-
-            // ── Tier 0: Element Interaction Manifest (shared across Phase 1 and 2) ──
-            timer.startTier("tier0");
-            const manifest = await collectManifest(page);
-            const styleGroups = groupByFingerprint(manifest);
-            timer.endTier("tier0", {
-              elementsDiscovered: manifest.length,
-              styleGroups: styleGroups.length,
-              representativeElements: styleGroups.length,
-            });
-
-            // Compute cssFingerprint once per template (used by Phase 3 + Phase 4)
-            const cssFingerprint = await computeCssFingerprint(page);
-
-            // ── Phase 1: Static — Tier 1, axe, evaluate tests (no DOM mutation) ──
-            const p1Start = Date.now();
-            const { issues: phase1Issues, promotedElements } = await runPhase1Static(
-              page, cluster, url, timer, styleGroups, axeCache, config, llmClient, parentSpan,
-              cssFingerprint, tier1Cache, evaluateCache, templateCacheStats,
-            );
-            allIssues.push(...phase1Issues);
-            phaseTimings.phase1StaticMs = Date.now() - p1Start;
-
-            // ── Phase 2: Interaction — Tier 2, interactive tests, re-enable animations ──
-            const p2Start = Date.now();
-            const { issues: phase2Issues, promotedToTier3 } = await runPhase2Interaction(
-              page, promotedElements, url, timer, cluster, hfCache, templateCacheStats,
-            );
-            allIssues.push(...phase2Issues);
-            phaseTimings.phase2InteractionMs = Date.now() - p2Start;
-
-            // ── Phase 3: Viewport — reflow, resize-text, text-spacing ──
-            const p3Start = Date.now();
-            const phase3Issues = await runPhase3Viewport(page, url, cluster, viewportCache, cssFingerprint);
-            allIssues.push(...phase3Issues);
-            phaseTimings.phase3ViewportMs = Date.now() - p3Start;
-
-            // ── Phase 4: Capture — color-use screenshots, status messages, Tier 3 queue ──
-            const p4Start = Date.now();
-            const phase4Issues = await runPhase4Capture(
-              page, url, cluster, auditId, llmClient, promotedToTier3, cvdCache,
-              cssFingerprint, manifest,
-            );
-            allIssues.push(...phase4Issues);
-            phaseTimings.phase4CaptureMs = Date.now() - p4Start;
-            phaseTimings.totalTemplateMs = Date.now() - gotoStart;
-            phaseTimings.cacheHfHits = templateCacheStats.hfHits;
-            phaseTimings.cacheHfMisses = templateCacheStats.hfMisses;
-            phaseTimings.cacheTier1Hits = templateCacheStats.tier1Hits;
-            phaseTimings.cacheTier1Misses = templateCacheStats.tier1Misses;
-            phaseTimings.cacheEvalHits = templateCacheStats.evalHits;
-            phaseTimings.cacheEvalMisses = templateCacheStats.evalMisses;
-
-            globalCacheStats.hfHits += templateCacheStats.hfHits;
-            globalCacheStats.hfMisses += templateCacheStats.hfMisses;
-            globalCacheStats.tier1Hits += templateCacheStats.tier1Hits;
-            globalCacheStats.tier1Misses += templateCacheStats.tier1Misses;
-            globalCacheStats.evalHits += templateCacheStats.evalHits;
-            globalCacheStats.evalMisses += templateCacheStats.evalMisses;
-
-            parentSpan.setMeta({ phaseTimings });
-          }
-
-          // ── Template amplification ──
-          const templateIssues = allIssues.filter((i) => TEMPLATE_LEVEL_RULES.has(i.rule));
-
-          // Representative page: ALL issues
-          const repPageId = await insertPageV4(auditId, {
-            url,
-            title: await page.title(),
-            templateId: cluster.id,
-            isRepresentative: true,
-            issueCount: allIssues.length,
-          });
-          await insertIssuesV4(auditId, repPageId, allIssues.map((i) => ({
-            rule: i.rule,
-            impact: i.impact,
-            description: i.description,
-            help: i.help,
-            helpUrl: i.helpUrl,
-            wcagTags: i.wcagTags,
-            selector: i.selector,
-            html: i.html,
-            xpath: i.xpath,
-            checkSource: i.checkSource,
-            category: i.violationCategory,
-            suggestedFix: i.suggestedFix ?? undefined,
-            fixConfidence: null,
-            templateId: cluster.id,
-          })));
-
-          // Other pages: ONLY template-level issues (amplified)
-          for (const memberUrl of cluster.urls.filter((u) => u !== url)) {
-            if (templateIssues.length > 0) {
-              const pageId = await insertPageV4(auditId, {
-                url: memberUrl,
-                templateId: cluster.id,
-                isRepresentative: false,
-                issueCount: templateIssues.length,
-              });
-              await insertIssuesV4(auditId, pageId, templateIssues.map((i) => ({
-                rule: i.rule,
-                impact: i.impact,
-                description: i.description,
-                help: i.help,
-                helpUrl: i.helpUrl,
-                wcagTags: i.wcagTags,
-                selector: i.selector,
-                html: i.html,
-                xpath: i.xpath,
-                checkSource: i.checkSource,
-                category: i.violationCategory,
-                suggestedFix: i.suggestedFix ?? undefined,
-                fixConfidence: null,
-                templateId: cluster.id,
-                affectedPages: cluster.urls.length,
-                amplifiedFrom: url,
-              })));
-            }
-          }
-
-          parentSpan.setMeta({
-            totalIssues: allIssues.length,
-            templateIssues: templateIssues.length,
-            amplifiedToPages: cluster.urls.length - 1,
-            tierTiming: timer.getTiming(),
-          });
-        } finally {
-          try { await page.close(); } catch { /* already closed */ }
-          await tracer.flush(); // Phase boundary flush per representative
+        // Finalize the PREVIOUS template now that read-only phases of the current one are done.
+        // The previous template's mutating phases were running concurrently with our read-only phases.
+        if (pendingMutating) {
+          const prev = pendingMutating;
+          const mutatingResult = await prev.promise;
+          await finalizeTemplate(
+            prev.cluster, prev.url, prev.readOnlyResult, mutatingResult,
+            auditId, prev.lease.page, tracer, globalCacheStats, prev.overlapped,
+          );
+          await prev.lease.release();
+          pendingMutating = null;
         }
-      });
+
+        // Decide whether to overlap: start P3+P4 in background while next template's P1+P2 runs
+        const canBatch = shouldBatch() && i < templates.length - 1;
+
+        if (canBatch) {
+          // Fire P3+P4 in background; loop continues to next template
+          pendingMutating = {
+            promise: runMutatingPhases(
+              lease.page, cluster, url, auditId, llmClient,
+              readOnlyResult.promotedToTier3, readOnlyResult.manifest,
+              readOnlyResult.cssFingerprint, cvdCache, viewportCache,
+            ),
+            lease,
+            cluster,
+            url,
+            readOnlyResult,
+            overlapped: true,
+          };
+          // Do NOT release lease here — runMutatingPhases is still using the page
+        } else {
+          // Sequential: run P3+P4 now, then finalize
+          const mutatingResult = await runMutatingPhases(
+            lease.page, cluster, url, auditId, llmClient,
+            readOnlyResult.promotedToTier3, readOnlyResult.manifest,
+            readOnlyResult.cssFingerprint, cvdCache, viewportCache,
+          );
+          await finalizeTemplate(
+            cluster, url, readOnlyResult, mutatingResult,
+            auditId, lease.page, tracer, globalCacheStats, false,
+          );
+          await lease.release();
+        }
+      } catch (err) {
+        // Clean up both leases on error
+        if (pendingMutating) {
+          await pendingMutating.promise.catch(() => {});
+          await pendingMutating.lease.release();
+          pendingMutating = null;
+        }
+        await lease.release();
+        throw err;
+      }
     }
+
+    // Finalize the last template if it was left pending
+    if (pendingMutating) {
+      const prev = pendingMutating;
+      try {
+        const mutatingResult = await prev.promise;
+        await finalizeTemplate(
+          prev.cluster, prev.url, prev.readOnlyResult, mutatingResult,
+          auditId, prev.lease.page, tracer, globalCacheStats, prev.overlapped,
+        );
+      } finally {
+        await prev.lease.release();
+        pendingMutating = null;
+      }
+    }
+
     console.log(`[probe] Cache stats — hf: ${globalCacheStats.hfHits}/${globalCacheStats.hfHits + globalCacheStats.hfMisses} hits, tier1: ${globalCacheStats.tier1Hits}/${globalCacheStats.tier1Hits + globalCacheStats.tier1Misses}, eval: ${globalCacheStats.evalHits}/${globalCacheStats.evalHits + globalCacheStats.evalMisses}`);
   } finally {
+    // If still pending after an uncaught throw, release
+    if (pendingMutating) {
+      await pendingMutating.promise.catch(() => {});
+      await pendingMutating.lease.release();
+    }
     await probeCtx.close();
   }
+}
+
+// ── Read-only phases: nav + Tier 0 + P1 + P2 (no viewport mutation, no screenshots) ──
+
+async function runReadOnlyPhases(
+  page: Page,
+  cluster: TemplateCluster,
+  url: string,
+  auditId: string,
+  config: PipelineConfig,
+  llmClient: LLMClient | null,
+  tier1Cache: Map<string, { issues: Issue[] }> | undefined,
+  evaluateCache: Map<string, Issue[]> | undefined,
+  hfCache: HoverFocusCache | undefined,
+  axeCache: Map<string, Issue[]> | undefined,
+): Promise<ReadOnlyResult> {
+  const timer = new TierTimer(auditId, cluster.id, url);
+  const templateCacheStats: CacheStats = { hfHits: 0, hfMisses: 0, tier1Hits: 0, tier1Misses: 0, evalHits: 0, evalMisses: 0 };
+  const phaseTimings: Record<string, number> = {};
+
+  const gotoStart = Date.now();
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  await injectConsentPrehideCSS(page);
+  phaseTimings.navigationMs = Date.now() - gotoStart;
+
+  // ── Tier 0: Element Interaction Manifest ──
+  timer.startTier("tier0");
+  const manifest = await collectManifest(page);
+  const styleGroups = groupByFingerprint(manifest);
+  timer.endTier("tier0", {
+    elementsDiscovered: manifest.length,
+    styleGroups: styleGroups.length,
+    representativeElements: styleGroups.length,
+  });
+
+  // Compute cssFingerprint once per template (used by P1, P3, P4)
+  const cssFingerprint = await computeCssFingerprint(page);
+
+  // Capture page title before mutations (P3 mutates viewport)
+  const pageTitle = await page.title();
+
+  // ── Phase 1: Static ──
+  const p1Start = Date.now();
+  // Build a minimal span-like object for runPhase1Static's parentSpan parameter
+  const spanMeta: Record<string, unknown> = {};
+  const fakeParentSpan = { setMeta: (m: Record<string, unknown>) => Object.assign(spanMeta, m) };
+  const { issues: phase1Issues, promotedElements } = await runPhase1Static(
+    page, cluster, url, timer, styleGroups, axeCache, config, llmClient, fakeParentSpan,
+    cssFingerprint, tier1Cache, evaluateCache, templateCacheStats,
+  );
+  phaseTimings.phase1StaticMs = Date.now() - p1Start;
+
+  // ── Phase 2: Interaction ──
+  const p2Start = Date.now();
+  const { issues: phase2Issues, promotedToTier3 } = await runPhase2Interaction(
+    page, promotedElements, url, timer, cluster, hfCache, templateCacheStats,
+  );
+  phaseTimings.phase2InteractionMs = Date.now() - p2Start;
+
+  return {
+    issues: [...phase1Issues, ...phase2Issues],
+    promotedToTier3,
+    manifest,
+    cssFingerprint,
+    phaseTimings,
+    timer,
+    templateCacheStats,
+    pageTitle,
+  };
+}
+
+// ── Mutating phases: P3 (viewport) + P4 (capture/screenshots) ──
+
+async function runMutatingPhases(
+  page: Page,
+  cluster: TemplateCluster,
+  url: string,
+  auditId: string,
+  llmClient: LLMClient | null,
+  promotedToTier3: ElementManifest[],
+  manifest: ElementManifest[],
+  cssFingerprint: string,
+  cvdCache: Map<string, { diffPercent: number; issues: Issue[] }>,
+  viewportCache: Map<string, Issue[]>,
+): Promise<MutatingResult> {
+  const phaseTimings: Record<string, number> = {};
+
+  // ── Phase 3: Viewport ──
+  const p3Start = Date.now();
+  const phase3Issues = await runPhase3Viewport(page, url, cluster, viewportCache, cssFingerprint);
+  phaseTimings.phase3ViewportMs = Date.now() - p3Start;
+
+  // ── Phase 4: Capture ──
+  const p4Start = Date.now();
+  const phase4Issues = await runPhase4Capture(
+    page, url, cluster, auditId, llmClient, promotedToTier3, cvdCache,
+    cssFingerprint, manifest,
+  );
+  phaseTimings.phase4CaptureMs = Date.now() - p4Start;
+
+  return {
+    issues: [...phase3Issues, ...phase4Issues],
+    phaseTimings,
+  };
+}
+
+// ── Finalize: combine issues, amplify, insert to DB, flush tracer ──
+
+async function finalizeTemplate(
+  cluster: TemplateCluster,
+  url: string,
+  readOnlyResult: ReadOnlyResult,
+  mutatingResult: MutatingResult,
+  auditId: string,
+  page: Page,
+  tracer: AuditTracer,
+  globalCacheStats: CacheStats,
+  overlapped: boolean,
+): Promise<void> {
+  const allIssues = [...readOnlyResult.issues, ...mutatingResult.issues];
+
+  // Merge phase timings
+  const phaseTimings: Record<string, number> = {
+    ...readOnlyResult.phaseTimings,
+    ...mutatingResult.phaseTimings,
+  };
+  phaseTimings.totalTemplateMs = (phaseTimings.navigationMs ?? 0)
+    + (phaseTimings.phase1StaticMs ?? 0)
+    + (phaseTimings.phase2InteractionMs ?? 0)
+    + (phaseTimings.phase3ViewportMs ?? 0)
+    + (phaseTimings.phase4CaptureMs ?? 0);
+  phaseTimings.overlapped = overlapped ? 1 : 0;
+
+  const cs = readOnlyResult.templateCacheStats;
+  phaseTimings.cacheHfHits = cs.hfHits;
+  phaseTimings.cacheHfMisses = cs.hfMisses;
+  phaseTimings.cacheTier1Hits = cs.tier1Hits;
+  phaseTimings.cacheTier1Misses = cs.tier1Misses;
+  phaseTimings.cacheEvalHits = cs.evalHits;
+  phaseTimings.cacheEvalMisses = cs.evalMisses;
+
+  globalCacheStats.hfHits += cs.hfHits;
+  globalCacheStats.hfMisses += cs.hfMisses;
+  globalCacheStats.tier1Hits += cs.tier1Hits;
+  globalCacheStats.tier1Misses += cs.tier1Misses;
+  globalCacheStats.evalHits += cs.evalHits;
+  globalCacheStats.evalMisses += cs.evalMisses;
+
+  // ── Template amplification ──
+  const templateIssues = allIssues.filter((i) => TEMPLATE_LEVEL_RULES.has(i.rule));
+
+  // Representative page: ALL issues
+  const repPageId = await insertPageV4(auditId, {
+    url,
+    title: readOnlyResult.pageTitle,
+    templateId: cluster.id,
+    isRepresentative: true,
+    issueCount: allIssues.length,
+  });
+  await insertIssuesV4(auditId, repPageId, allIssues.map((i) => ({
+    rule: i.rule,
+    impact: i.impact,
+    description: i.description,
+    help: i.help,
+    helpUrl: i.helpUrl,
+    wcagTags: i.wcagTags,
+    selector: i.selector,
+    html: i.html,
+    xpath: i.xpath,
+    checkSource: i.checkSource,
+    category: i.violationCategory,
+    suggestedFix: i.suggestedFix ?? undefined,
+    fixConfidence: null,
+    templateId: cluster.id,
+  })));
+
+  // Other pages: ONLY template-level issues (amplified)
+  for (const memberUrl of cluster.urls.filter((u) => u !== url)) {
+    if (templateIssues.length > 0) {
+      const pageId = await insertPageV4(auditId, {
+        url: memberUrl,
+        templateId: cluster.id,
+        isRepresentative: false,
+        issueCount: templateIssues.length,
+      });
+      await insertIssuesV4(auditId, pageId, templateIssues.map((i) => ({
+        rule: i.rule,
+        impact: i.impact,
+        description: i.description,
+        help: i.help,
+        helpUrl: i.helpUrl,
+        wcagTags: i.wcagTags,
+        selector: i.selector,
+        html: i.html,
+        xpath: i.xpath,
+        checkSource: i.checkSource,
+        category: i.violationCategory,
+        suggestedFix: i.suggestedFix ?? undefined,
+        fixConfidence: null,
+        templateId: cluster.id,
+        affectedPages: cluster.urls.length,
+        amplifiedFrom: url,
+      })));
+    }
+  }
+
+  // Record span with all metadata and flush
+  const span = tracer.startSpan("probe:representative");
+  span.setMeta({
+    url,
+    templateId: cluster.id,
+    testPlan: cluster.testPlan,
+    phaseTimings,
+    totalIssues: allIssues.length,
+    templateIssues: templateIssues.length,
+    amplifiedToPages: cluster.urls.length - 1,
+    tierTiming: readOnlyResult.timer.getTiming(),
+  });
+  span.end("ok");
+  await tracer.flush();
 }
 
 // ── Phase 1: Static (Tier 1, axe, evaluate tests — no DOM mutation) ──
