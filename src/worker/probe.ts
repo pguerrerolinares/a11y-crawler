@@ -70,6 +70,8 @@ interface ReadOnlyResult {
   timer: TierTimer;
   templateCacheStats: CacheStats;
   pageTitle: string;
+  spanMeta: Record<string, unknown>;
+  wallClockStart: number;
 }
 
 interface MutatingResult {
@@ -226,6 +228,7 @@ async function runReadOnlyPhases(
   hfCache: HoverFocusCache | undefined,
   axeCache: Map<string, Issue[]> | undefined,
 ): Promise<ReadOnlyResult> {
+  const wallClockStart = Date.now();
   const timer = new TierTimer(auditId, cluster.id, url);
   const templateCacheStats: CacheStats = { hfHits: 0, hfMisses: 0, tier1Hits: 0, tier1Misses: 0, evalHits: 0, evalMisses: 0 };
   const phaseTimings: Record<string, number> = {};
@@ -278,6 +281,8 @@ async function runReadOnlyPhases(
     timer,
     templateCacheStats,
     pageTitle,
+    spanMeta,
+    wallClockStart,
   };
 }
 
@@ -336,11 +341,7 @@ async function finalizeTemplate(
     ...readOnlyResult.phaseTimings,
     ...mutatingResult.phaseTimings,
   };
-  phaseTimings.totalTemplateMs = (phaseTimings.navigationMs ?? 0)
-    + (phaseTimings.phase1StaticMs ?? 0)
-    + (phaseTimings.phase2InteractionMs ?? 0)
-    + (phaseTimings.phase3ViewportMs ?? 0)
-    + (phaseTimings.phase4CaptureMs ?? 0);
+  phaseTimings.totalTemplateMs = Date.now() - readOnlyResult.wallClockStart;
   phaseTimings.overlapped = overlapped ? 1 : 0;
 
   const cs = readOnlyResult.templateCacheStats;
@@ -419,6 +420,7 @@ async function finalizeTemplate(
   // Record span with all metadata and flush
   const span = tracer.startSpan("probe:representative");
   span.setMeta({
+    ...readOnlyResult.spanMeta,
     url,
     templateId: cluster.id,
     testPlan: cluster.testPlan,
@@ -427,6 +429,7 @@ async function finalizeTemplate(
     templateIssues: templateIssues.length,
     amplifiedToPages: cluster.urls.length - 1,
     tierTiming: readOnlyResult.timer.getTiming(),
+    actualStartMs: readOnlyResult.wallClockStart,
   });
   span.end("ok");
   await tracer.flush();
