@@ -49,18 +49,3 @@ jobs:
         run: docker build -f Dockerfile.api -t a11y-api .
       - name: Build Worker image
         run: docker build -f Dockerfile.worker -t a11y-worker .
-
-  # ── Stage 3: Deploy (only on master push, after build) ─────────
-  deploy:
-    name: Deploy to Coolify
-    needs: [build]
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push' && vars.COOLIFY_DEPLOY_ENABLED == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger Coolify deploy
-        run: |
-          curl -f -X POST "${{ secrets.COOLIFY_WEBHOOK }}" \
-            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --max-time 10
-          echo "Deploy triggered successfully"
