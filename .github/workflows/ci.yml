@@ -45,8 +45,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build Docker image
-        run: docker build -t a11y-crawler .
+      - name: Build API image
+        run: docker build -f Dockerfile.api -t a11y-api .
+      - name: Build Worker image
+        run: docker build -f Dockerfile.worker -t a11y-worker .
 
   # ── Stage 3: Deploy (only on master push, after build) ─────────
   deploy:
