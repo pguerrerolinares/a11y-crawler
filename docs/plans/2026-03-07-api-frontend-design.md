@@ -396,7 +396,7 @@ Multi-stage: Stage 1 builds frontend (bun build → dist/), Stage 2 installs Pla
 
 ---
 
-## 9. Lessons Applied (from ai-news-platform JOURNEY.md)
+## 9. Lessons Applied (from shared-platform JOURNEY.md)
 
 | Lesson | Application |
 |--------|-------------|

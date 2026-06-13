@@ -237,7 +237,7 @@ The restructure separates by **DOM mutation profile**:
 #### Fix 3: Implement hover-focus sub-tests in Tier 2
 
 **File**: `src/worker/tier2.ts`
-**Problem**: The v5 spec says Tier 2 evaluates popup persistence, hoverability, and dismissibility. But in the actual code, `detectPopup()` is called but the fields `popupPersistent`, `popupHoverable`, `popupDismissible` are never set. This explains the open gap from the Auditoria manual de referencia comparison (hover-focus in `/equipo/`).
+**Problem**: The v5 spec says Tier 2 evaluates popup persistence, hoverability, and dismissibility. But in the actual code, `detectPopup()` is called but the fields `popupPersistent`, `popupHoverable`, `popupDismissible` are never set. This explains the open gap from the Auditoría manual de referencia comparison (hover-focus in `/equipo/`).
 
 **Change**: After `detectPopup()` detects a popup, implement the 3 WCAG 1.4.13 sub-tests:
 1. **Persistence**: Move mouse away, wait 300ms, check if popup still visible
@@ -316,7 +316,7 @@ Note: Phase 2 saves ~33-43s (axe-full in scan + Tier 1 short-circuit). Phase 3 s
 1. **Add `[onclick]` to manifest** — 1 line, closes detection gap
 2. **Add focusability pre-check in Tier 2** — ~10 lines
 3. **Short-circuit Tier 1 on cross-origin CSS** — ~5 lines
-4. **Implement hover-focus sub-tests in Tier 2** — closes Auditoria manual de referencia comparison gap
+4. **Implement hover-focus sub-tests in Tier 2** — closes Auditoría manual de referencia comparison gap
 5. **Phase 1 RAM optimizations** (1.1-1.6) — independent, can parallelize
 6. **Phase 2: axe-full in scan** — requires scan.ts + probe.ts changes + dedup logic
 7. **Restructure probe.ts into 4 phases** — refactor with feature flag

@@ -23,7 +23,10 @@ README.md
 /index.ts
 
 # Confidential client reports
-docs/Informe_Analisis_Ley_de_Accesibilidad_KB_vDEF_firm_260317_193256.pdf
+docs/*.pdf
+
+# Playwright MCP debug artifacts (screenshots/console logs)
+.playwright-mcp/
 
 # Git worktrees
 .worktrees/

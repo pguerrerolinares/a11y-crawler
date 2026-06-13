@@ -64,7 +64,7 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 
 ---
 
-## MEDIUM — Test Coverage Gaps (vs Auditoria manual de referencia manual audit 2026-01-30)
+## MEDIUM — Test Coverage Gaps (vs Auditoría manual de referencia manual audit 2026-01-30)
 
 ### ~~MEDIUM-11: `status-messages` no detecta RM-11 (WCAG 4.1.3) en /contacto/~~ ✅ CERRADO (v7)
 - **Estado:** Verificado — el scanner detecta 14 issues en `/contacto/` (checkValidity + MutationObserver). Gap cerrado.
@@ -179,4 +179,4 @@ Issues identificados en code reviews de v4.3/v4.4 que no bloquean producción pe
 ---
 
 ## Fecha: 2026-03-19 (original) / 2026-03-23 (refactoring update)
-## Source: Code review v4.3/v4.4 + comparativa Auditoria manual de referencia audit (verificado con audit bdb0087b)
+## Source: Code review v4.3/v4.4 + comparativa Auditoría manual de referencia audit (verificado con audit bdb0087b)

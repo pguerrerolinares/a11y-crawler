@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Deploy a11y-crawler-v2 to production on existing VPS via Coolify, coexisting with ai-news-platform.
+**Goal:** Deploy a11y-crawler-v2 to production on existing VPS via Coolify, coexisting with shared-platform.
 
-**Architecture:** Single Docker container (Bun + Playwright) deployed as a Coolify resource. Traefik handles SSL + basic auth for `a11y.pguerrero.me`. Reuses ai-news PostgreSQL via shared `coolify` Docker network.
+**Architecture:** Single Docker container (Bun + Playwright) deployed as a Coolify resource. Traefik handles SSL + basic auth for `a11y.pguerrero.me`. Reuses shared-platform PostgreSQL via shared `coolify` Docker network.
 
 **Tech Stack:** Bun, Docker, Coolify/Traefik, PostgreSQL, Let's Encrypt
 
@@ -155,12 +155,12 @@ git commit -m "docs: add .env.example with required environment variables"
 
 **Step 1: Create the compose file**
 
-Reference: `ai-news-platform/docker-compose.coolify.yml` for Traefik label patterns.
+Reference: `shared-platform/docker-compose.coolify.yml` for Traefik label patterns.
 
 ```yaml
 # docker-compose.coolify.yml — Coolify deployment
 # Coolify's Traefik handles SSL + domain routing + basic auth.
-# Reuses PostgreSQL from ai-news-platform via shared coolify network.
+# Reuses PostgreSQL from shared-platform via shared coolify network.
 
 services:
   app:
@@ -283,7 +283,7 @@ echo "$(openssl passwd -apr1 YOUR_PASSWORD_HERE)"
 **Step 4: Add resource in Coolify**
 
 1. Open Coolify dashboard (VPS:8000)
-2. Go to existing ai-news project
+2. Go to existing shared-platform project
 3. Add new resource → Docker Compose
 4. Point to a11y-crawler git repo
 5. Set compose file path: `docker-compose.coolify.yml`

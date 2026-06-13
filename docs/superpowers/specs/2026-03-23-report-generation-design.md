@@ -6,7 +6,7 @@
 
 ## Problem
 
-The current PDF report is a basic summary: score, stats, sample of 10 pages / 5 issues each. Professional accessibility audits (like Auditoria manual de referencia's 33-page report for Cliente Anonimo) include executive summaries, WCAG compliance tables, findings grouped by thematic category with detailed remediation guidance, and formal conclusions. The scanner detects everything Auditoria manual de referencia reports (and more), but the output doesn't reflect that depth.
+The current PDF report is a basic summary: score, stats, sample of 10 pages / 5 issues each. Professional accessibility audits (like Auditoría manual de referencia's 33-page report for Cliente Anónimo) include executive summaries, WCAG compliance tables, findings grouped by thematic category with detailed remediation guidance, and formal conclusions. The scanner detects everything Auditoría manual de referencia reports (and more), but the output doesn't reflect that depth.
 
 ## Goals
 
@@ -154,7 +154,7 @@ export interface ReportData {
   // Compliance status per WCAG criterion.
   // Built by enumerating ALL criteria from CRITERION_META, then LEFT JOINing
   // with issues. Criteria with 0 issues → status "pass". This ensures the
-  // table shows both pass and fail like Auditoria manual de referencia's format.
+  // table shows both pass and fail like Auditoría manual de referencia's format.
   complianceTable: Array<{
     criterion: string;        // "1.4.3"
     name: string;             // from CRITERION_META
@@ -318,7 +318,7 @@ templates/report/
 
 For `detail = "full"`, `findings.typ` includes instance tables below each finding.
 
-**Finding block format** (mirrors Auditoria manual de referencia structure):
+**Finding block format** (mirrors Auditoría manual de referencia structure):
 
 Each finding renders as a table block:
 

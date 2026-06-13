@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Optimize the audit probe pipeline with a generalized 4-tier system (Manifest → DOM/CSSOM → Interaction → LLM Vision) to reduce time by ~30-45%, cost by ~60-80%, and close 3 quality gaps vs Auditoria manual de referencia.
+**Goal:** Optimize the audit probe pipeline with a generalized 4-tier system (Manifest → DOM/CSSOM → Interaction → LLM Vision) to reduce time by ~30-45%, cost by ~60-80%, and close 3 quality gaps vs Auditoría manual de referencia.
 
 **Architecture:** Replace the current sequential test execution in `probe.ts` with a tiered system where Tier 0 pre-scans all elements, Tier 1 resolves what it can via CSSOM (free), Tier 2 runs unified interactions only on ambiguous elements, and Tier 3 runs async LLM vision with crops+batching. Each tier filters for the next, reducing work progressively.
 

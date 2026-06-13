@@ -11,7 +11,7 @@
 
 ### 1.1 What We Have
 
-The scanner currently covers ~70-75% of what a manual audit (like Auditoria manual de referencia's) covers, across 33+ pages vs 6 in a manual audit.
+The scanner currently covers ~70-75% of what a manual audit (like Auditoría manual de referencia's) covers, across 33+ pages vs 6 in a manual audit.
 
 **Test coverage:**
 - axe-core: ~80 WCAG rules (A, AA, AAA configurable)
@@ -276,7 +276,7 @@ Note: May need to add `"semantic"` as a new `ViolationCategory` value, or use `"
 
 ### 6.1 Coverage Comparison
 
-| Criterion | axe-core | pa11y | WAVE | Auditoria manual de referencia (manual) | a11y-crawler (current) | a11y-crawler (proposed) |
+| Criterion | axe-core | pa11y | WAVE | Auditoría manual de referencia (manual) | a11y-crawler (current) | a11y-crawler (proposed) |
 |---|---|---|---|---|---|---|
 | 1.4.1 Use of Color | No | No | No | Yes | No | **Yes (CVD+LLM)** |
 | 1.4.13 Hover/Focus | No | No | No | Yes | No | **Yes (state machine)** |

@@ -13,7 +13,7 @@ The v4.5 probe pipeline has performance and cost issues:
 
 - **Time regression**: 931s (v4.3, 30 pages) → 1,734s (v4.5, 33 pages) — +86% from 3 new interactive tests
 - **Cost**: ~$0.50/audit, 80%+ from LLM vision (screenshots sent without crop, no detail:low)
-- **Quality gaps**: 3 Auditoria manual de referencia findings not detected (status-messages, hover-focus CSS-only, sensory-instructions URL not crawled)
+- **Quality gaps**: 3 Auditoría manual de referencia findings not detected (status-messages, hover-focus CSS-only, sensory-instructions URL not crawled)
 - **No per-test timing**: impossible to diagnose which tests dominate execution time
 - **Redundant interactions**: state-change-contrast, hover-focus, and aria-states each hover/focus the same elements independently
 - **WCAG criterion mapping**: was 33.4%, fixed to 100% in commit `17c43bf` (this audit session)
@@ -22,7 +22,7 @@ The v4.5 probe pipeline has performance and cost issues:
 
 - No fixed time target — each optimization must justify its ratio of quality/time
 - No cost ceiling — but cost must be justified
-- Quality gaps vs Auditoria manual de referencia are critical — must be closed for product credibility
+- Quality gaps vs Auditoría manual de referencia are critical — must be closed for product credibility
 - VPS: 4GB RAM, shared with Coolify + other services (~1.8GB available)
 
 ---
@@ -709,7 +709,7 @@ If the first 3 elements of the same style group all return `confidence: "high"` 
 
 ---
 
-## 7. Closing Auditoria manual de referencia Gaps
+## 7. Closing Auditoría manual de referencia Gaps
 
 | Gap | WCAG | Root Cause | Fix | Section |
 |-----|------|-----------|-----|---------|
@@ -871,7 +871,7 @@ Response:
 | Rules | 31 | **33** | **+2** |
 | Cost per audit | ~$0.50 | ~$0.50 | 0% (Tier 3 crop/batch/cache not yet activated) |
 | Cost on re-audit (same site) | ~$0.50 | ~$0.05-0.10 (est.) | -80-90% (cache, conservative) |
-| Auditoria manual de referencia coverage | 81.5% | ~92-96% (est.) | +3 gaps closed |
+| Auditoría manual de referencia coverage | 81.5% | ~92-96% (est.) | +3 gaps closed |
 | Issues with WCAG criterion | 100% | 100% | maintained |
 | Per-test timing | none | full breakdown | new capability |
 | UX perceived time | 29 min wait | instant (Tier 0-2) + Tier 3 trickle | async |

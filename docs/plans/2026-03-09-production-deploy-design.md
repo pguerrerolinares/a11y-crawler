@@ -2,16 +2,16 @@
 
 **Date:** 2026-03-09
 **VPS:** root@YOUR_VPS_IP
-**Coexists with:** ai-news-platform (same Coolify project)
+**Coexists with:** shared-platform (same Coolify project)
 
 ## Architecture
 
-Single Docker container deployed via Coolify as a new resource within the existing ai-news-platform project. Traefik (managed by Coolify) handles SSL, domain routing, and basic auth. No nginx needed.
+Single Docker container deployed via Coolify as a new resource within the existing shared-platform project. Traefik (managed by Coolify) handles SSL, domain routing, and basic auth. No nginx needed.
 
 ```
 Internet → Traefik (Coolify) → a11y-crawler:3000
                                     ↓
-                              PostgreSQL (ai-news db container, network: coolify)
+                              PostgreSQL (shared-platform db container, network: coolify)
 ```
 
 ## Domain
@@ -23,14 +23,14 @@ Internet → Traefik (Coolify) → a11y-crawler:3000
 `docker-compose.coolify.yml` with one service:
 
 - **app**: Builds from existing Dockerfile, exposes port 3000
-  - Network: `coolify` (external) — gives access to Traefik + ai-news PostgreSQL
+  - Network: `coolify` (external) — gives access to Traefik + shared-platform PostgreSQL
   - Traefik labels for `a11y.pguerrero.me` with HTTPS + Let's Encrypt
   - Traefik basic auth middleware
   - Health check: `GET /api/audits` (already exists, returns 200)
 
 ## Database
 
-Reuse ai-news PostgreSQL (`db` container on `coolify` network, port 5432). Create a separate database `a11y` within it.
+Reuse shared-platform PostgreSQL (`db` container on `coolify` network, port 5432). Create a separate database `a11y` within it.
 
 Connection: `postgresql://ainews:PASSWORD@db:5432/a11y`
 
@@ -69,14 +69,14 @@ No `.env` file on VPS — all managed by Coolify.
 3. **Hardcode crawler limits** — 1 concurrent audit, 50 max pages
 4. **`.env` cleanup** — add to `.gitignore`, create `.env.example`
 
-## Changes to ai-news-platform
+## Changes to shared-platform
 
 **None.** The `db` container is already on the `coolify` network and accessible by DNS name `db`.
 
 ## Deployment Steps
 
 1. Add DNS A record: `a11y.pguerrero.me` → `YOUR_VPS_IP`
-2. Create database: `docker exec` into ai-news pg container, `CREATE DATABASE a11y;`
+2. Create database: `docker exec` into shared-platform pg container, `CREATE DATABASE a11y;`
 3. In Coolify UI: add new resource (Docker Compose) to existing project
 4. Point to a11y-crawler git repo, set compose file to `docker-compose.coolify.yml`
 5. Configure env vars in Coolify UI

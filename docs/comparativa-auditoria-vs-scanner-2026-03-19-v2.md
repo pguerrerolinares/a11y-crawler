@@ -1,16 +1,16 @@
-# Comparativa v2: Auditoria manual de referencia (manual) vs a11y-crawler-v2 (automatizado)
+# Comparativa v2: Auditoría manual de referencia (manual) vs a11y-crawler-v2 (automatizado)
 
 > Fecha: 2026-03-19
 > Sitio: example-client.com
-> Informe Auditoria manual de referencia: 30 enero 2026 (6 páginas, revisión manual + automática)
+> Informe Auditoría manual de referencia: 30 enero 2026 (6 páginas, revisión manual + automática)
 > Audit scanner: 19 marzo 2026 (audit `bdb0087b`, 33 páginas, pipeline v4.1)
-> Comparativa anterior: `comparativa-auditoria manual de referencia-vs-scanner-2026-03-19.md` (audit `289c61ee`, 30 páginas)
+> Comparativa anterior: `comparativa-auditoría manual de referencia-vs-scanner-2026-03-19.md` (audit `289c61ee`, 30 páginas)
 
 ---
 
 ## Datos generales
 
-| Métrica | Auditoria manual de referencia (manual) | Scanner (anterior) | Scanner (actual) |
+| Métrica | Auditoría manual de referencia (manual) | Scanner (anterior) | Scanner (actual) |
 |---|---|---|---|
 | Páginas analizadas | 6 | 30 | **33** |
 | Hallazgos reportados | 27 | 2,251 | **2,487** |
@@ -36,7 +36,7 @@ El coste anterior (~$0.05) subestimaba las llamadas de visión. El tracker LLM n
 | Duración | 931s | 1,734s | +86% |
 | Issues totales | 2,251 | 2,487 | +10.5% |
 | Reglas detectadas | 28 | 31 | +3 |
-| Gaps vs Auditoria manual de referencia | 3 (2 parciales + 1 no cubierto) | 3 nuevos | diferentes |
+| Gaps vs Auditoría manual de referencia | 3 (2 parciales + 1 no cubierto) | 3 nuevos | diferentes |
 
 **3 tests nuevos** desde la auditoría anterior: `skip-nav-missing`, `state-change-contrast`, `accessibility-declaration-missing` — cerraron los 3 gaps identificados en la comparativa v1.
 
@@ -48,7 +48,7 @@ El coste anterior (~$0.05) subestimaba las llamadas de visión. El tracker LLM n
 
 ## Comparativa hallazgo por hallazgo
 
-### Revisión Automática Auditoria manual de referencia
+### Revisión Automática Auditoría manual de referencia
 
 | # | ID | WCAG | Criterio | Scanner detecta? | Reglas scanner | Notas |
 |---|---|---|---|---|---|---|
@@ -62,7 +62,7 @@ El coste anterior (~$0.05) subestimaba las llamadas de visión. El tracker LLM n
 
 ---
 
-### Revisión Manual Auditoria manual de referencia
+### Revisión Manual Auditoría manual de referencia
 
 | # | ID | WCAG | Criterio | Scanner detecta? | Reglas scanner | Notas |
 |---|---|---|---|---|---|---|
@@ -80,7 +80,7 @@ El coste anterior (~$0.05) subestimaba las llamadas de visión. El tracker LLM n
 | 17 | RM-12 | 1.4.1 | Color como significado | **SI** | `color-use-cvd`, `color-use-link-color-only`, `color-use-llm` | 3-tier con CVD + LLM vision |
 | 18 | RM-13 | 1.3.3 | Instrucciones sensoriales | **NO DETECTADO** | — | `/formulario/` no crawleada. Backlog MEDIUM-13 |
 | 19 | RM-14 | 1.4.10 | Reflujo | **SI** | `reflow` | En detectedRules |
-| 20 | RM-15 | 1.4.13 | Hover/focus content | **NO DETECTADO** | — | Test `hover-focus` no generó issues pese a incumplimiento confirmado por Auditoria manual de referencia. Backlog MEDIUM-12 |
+| 20 | RM-15 | 1.4.13 | Hover/focus content | **NO DETECTADO** | — | Test `hover-focus` no generó issues pese a incumplimiento confirmado por Auditoría manual de referencia. Backlog MEDIUM-12 |
 | 21 | RM-16 | 1.3.2 | Secuencia significativa | **SI** | `meaningful-sequence`, `meaningful-sequence-reorder` | Kendall tau DOM vs visual |
 | 22 | RM-17 | 1.3.1+1.3.2 | Columnas multicolumn | **SI** | `meaningful-sequence` | Cubierto por Kendall tau |
 | 23 | RM-18 | 2.5.8 | Tamaño objetivo | **SI** | `target-size` | En detectedRules |
@@ -93,7 +93,7 @@ El coste anterior (~$0.05) subestimaba las llamadas de visión. El tracker LLM n
 
 ## Resumen de cobertura
 
-| Categoría | Total Auditoria manual de referencia | Completo | Parcial | No detectado |
+| Categoría | Total Auditoría manual de referencia | Completo | Parcial | No detectado |
 |---|---|---|---|---|
 | Revisión automática | 5 | **5** | 0 | 0 |
 | Revisión manual | 22 | **15** | **2** | **3** (-2 no son gaps del test sino del site/crawler) |
@@ -122,21 +122,21 @@ El coste anterior (~$0.05) subestimaba las llamadas de visión. El tracker LLM n
 ### GAP 1: WCAG 4.1.3 — Mensajes de estado (RM-11)
 
 **Estado:** NO DETECTADO
-**Auditoria manual de referencia:** Formulario de /contacto/ muestra mensajes sin `role="status"` o `aria-live`
+**Auditoría manual de referencia:** Formulario de /contacto/ muestra mensajes sin `role="status"` o `aria-live`
 **Scanner:** Test `status-messages` no generó issues. Causa probable: el formulario requiere submit real con campos válidos; el test puede no completar la interacción.
 **Backlog:** MEDIUM-11
 
 ### GAP 2: WCAG 1.4.13 — Contenido en hover/focus (RM-15)
 
 **Estado:** NO DETECTADO
-**Auditoria manual de referencia:** Tarjetas de personas en /equipo/ con hover no persistente/hoverable/descartable
+**Auditoría manual de referencia:** Tarjetas de personas en /equipo/ con hover no persistente/hoverable/descartable
 **Scanner:** Test `hover-focus` no generó issues. Causa probable: CSS `:hover` puro sin JS, el test no detecta transitions CSS-only.
 **Backlog:** MEDIUM-12
 
 ### GAP 3: WCAG 1.3.3 — Instrucciones sensoriales (RM-13)
 
 **Estado:** NO DETECTADO
-**Auditoria manual de referencia:** Formulario en /formulario/ con instrucciones visuales implícitas
+**Auditoría manual de referencia:** Formulario en /formulario/ con instrucciones visuales implícitas
 **Scanner:** URL `/formulario/` no fue descubierta en las 33 URLs crawleadas. Posible URL dinámica o no enlazada.
 **Backlog:** MEDIUM-13
 
@@ -158,7 +158,7 @@ El coste anterior (~$0.05) subestimaba las llamadas de visión. El tracker LLM n
 
 ---
 
-## Lo que el scanner detecta y Auditoria manual de referencia NO
+## Lo que el scanner detecta y Auditoría manual de referencia NO
 
 | Regla scanner | WCAG | Descripción |
 |---|---|---|
@@ -191,7 +191,7 @@ Todos documentados en backlog (MEDIUM-11, 12, 13) + 1 bug crítico (HIGH-1).
 ### Ventajas del scanner
 - **5.5x más páginas** (33 vs 6)
 - **~92x más issues** individuales localizados (2,487 vs 27 genéricos)
-- **11 reglas extra** que Auditoria manual de referencia no evaluó
+- **11 reglas extra** que Auditoría manual de referencia no evaluó
 - **72.3% de issues de tests propios** (wcag-custom + interactive + llm-vision), no solo axe-core
 - **Coste ~$0.20** vs miles de euros
 - **29 minutos** vs semanas

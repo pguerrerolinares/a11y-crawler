@@ -2,7 +2,7 @@
 
 > Context: Replacing manual accessibility auditing with automated techniques for WCAG criteria traditionally considered non-automatable.
 > Date: 2026-03-18
-> Baseline: Comparison of Auditoria manual de referencia manual audit (example-client.com) vs a11y-crawler-v2 automated scan.
+> Baseline: Comparison of Auditoría manual de referencia manual audit (example-client.com) vs a11y-crawler-v2 automated scan.
 
 ---
 
@@ -10,13 +10,13 @@
 
 ### 1.1 The Problem
 
-Manual accessibility audits (like Auditoria manual de referencia's report for Cliente Anonimo) cost thousands of euros, take weeks, and cover only a handful of pages. Our automated scanner (a11y-crawler-v2) covers 33+ pages with 2,596 issues detected — but misses ~25-30% of criteria that "require human judgment."
+Manual accessibility audits (like Auditoría manual de referencia's report for Cliente Anónimo) cost thousands of euros, take weeks, and cover only a handful of pages. Our automated scanner (a11y-crawler-v2) covers 33+ pages with 2,596 issues detected — but misses ~25-30% of criteria that "require human judgment."
 
 The question: **can we close that gap using LLMs, vision models, and advanced browser automation?**
 
 ### 1.2 Scope
 
-We identified 8 WCAG criteria from the Auditoria manual de referencia report that our scanner doesn't cover, all traditionally considered to require human evaluation:
+We identified 8 WCAG criteria from the Auditoría manual de referencia report that our scanner doesn't cover, all traditionally considered to require human evaluation:
 
 | # | WCAG | Criterion | Why "human judgment" |
 |---|---|---|---|
@@ -720,7 +720,7 @@ Answer with JSON: { "isSemanticStructure": bool, "suggestedElement": "...", "con
 
 **What it requires:** For all UI components, states, properties, and values must be programmatically determinable, and notification of changes must be available to assistive technologies.
 
-**Why it's considered "human judgment":** Auditoria manual de referencia flagged that menus and interactive controls don't expose `aria-expanded`, `aria-selected`, `aria-current` correctly. This requires interacting with the widget and verifying attribute changes.
+**Why it's considered "human judgment":** Auditoría manual de referencia flagged that menus and interactive controls don't expose `aria-expanded`, `aria-selected`, `aria-current` correctly. This requires interacting with the widget and verifying attribute changes.
 
 **Current tool coverage:** axe-core checks static ARIA (missing attributes, invalid values) but cannot verify *dynamic state changes* after interaction.
 
@@ -918,7 +918,7 @@ async function testStatusMessages(page: Page) {
 
 ### 2.8 WCAG 1.3.1/1.3.2 — Multicolumn Reading Order
 
-Same approach as 2.4 (Kendall tau). The specific Auditoria manual de referencia finding was:
+Same approach as 2.4 (Kendall tau). The specific Auditoría manual de referencia finding was:
 - Main content + aside columns where the aside appears after all content in DOM but visually beside it
 - Grid layouts where image/text pairs are reordered on mobile
 
@@ -1009,7 +1009,7 @@ for (const width of [1280, 320]) {
 
 ## 5. Competitive Landscape
 
-| Feature | axe-core | pa11y | WAVE | Auditoria manual de referencia (manual) | **a11y-crawler-v2 (proposed)** |
+| Feature | axe-core | pa11y | WAVE | Auditoría manual de referencia (manual) | **a11y-crawler-v2 (proposed)** |
 |---|---|---|---|---|---|
 | 1.4.1 Use of Color | No | No | No | Yes (manual) | **Yes (CVD + LLM)** |
 | 1.4.13 Hover/Focus | No | No | No | Yes (manual) | **Yes (state machine)** |

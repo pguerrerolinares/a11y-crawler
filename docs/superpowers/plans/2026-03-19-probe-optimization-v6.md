@@ -586,7 +586,7 @@ git add src/worker/tier2.ts src/worker/__tests__/tier2-hoverfocus.test.ts
 git commit -m "feat(tier2): implement WCAG 1.4.13 hover-focus sub-tests
 
 Tests popup persistence, hoverability, and dismissibility using real
-mouse movement (page.mouse.move). Closes hover-focus gap from Auditoria manual de referencia
+mouse movement (page.mouse.move). Closes hover-focus gap from Auditoría manual de referencia
 comparison in /equipo/."
 ```
 

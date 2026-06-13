@@ -1179,7 +1179,7 @@ services:
       - "traefik.http.routers.a11y-http.middlewares=a11y-redirect"
       - "traefik.http.middlewares.a11y-redirect.redirectscheme.scheme=https"
       - "traefik.http.routers.a11y-https.middlewares=a11y-auth"
-      - "traefik.http.middlewares.a11y-auth.basicauth.users=ally-news:${BASIC_AUTH_USERS}"
+      - "traefik.http.middlewares.a11y-auth.basicauth.users=${BASIC_AUTH_USERS}"
       - "traefik.http.services.a11y.loadbalancer.server.port=3000"
       - "traefik.docker.network=coolify"
     healthcheck:
