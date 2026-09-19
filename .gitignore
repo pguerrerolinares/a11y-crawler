@@ -31,3 +31,6 @@ docs/*.pdf
 # Git worktrees
 .worktrees/
 .superpowers/
+
+# Client data (reports, oracles, cross-validations) — never commit
+/private/

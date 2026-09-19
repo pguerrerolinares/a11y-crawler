@@ -19,6 +19,7 @@ import { testStatusMessages } from "../analyzer/wcag-status-messages";
 import { testColorUse } from "../analyzer/wcag-color-use";
 import { testSensoryInstructions } from "../analyzer/wcag-sensory-instructions";
 import { testLegalA11y } from "../analyzer/wcag-legal-checks";
+import { testLabelNameMismatch, testInteractiveNesting } from "../analyzer/wcag-name-role-value-extra";
 import type { HoverFocusCache } from "./tier2";
 import { collectManifest, groupByFingerprint } from "./manifest";
 import { runTier1 } from "./tier1";
@@ -563,7 +564,8 @@ async function runPhase1Static(
   const domStructure = await collectDomStructure(page);
   const evalTestNames = (["target-size","multimedia","timed-events","non-text-contrast","meaningful-sequence","semantic-structure","legal-a11y"] as const)
     .filter(t => cluster.testPlan.includes(t as any)).join(",");
-  const evalCacheKey = computeDomHash(domStructure) + ":" + evalTestNames;
+  // label-content-name-mismatch and interactive-in-interactive always run (not gated by testPlan)
+  const evalCacheKey = computeDomHash(domStructure) + ":" + evalTestNames + ":always-name-role-value-extra";
 
   if (evaluateCache?.has(evalCacheKey)) {
     cacheStats.evalHits++;
@@ -578,6 +580,9 @@ async function runPhase1Static(
     if (cluster.testPlan.includes("meaningful-sequence")) evaluateTests.push(testMeaningfulSequence(page, url));
     if (cluster.testPlan.includes("semantic-structure")) evaluateTests.push(testSemanticStructure(page, url));
     if (cluster.testPlan.includes("legal-a11y")) evaluateTests.push(testLegalA11y(page, url));
+    // Always run — confirmed cross-validation gaps (WCAG 2.5.3 / 4.1.2), independent of testPlan
+    evaluateTests.push(testLabelNameMismatch(page, url));
+    evaluateTests.push(testInteractiveNesting(page, url));
     const evalResults = await Promise.all(evaluateTests);
     const evalIssues = evalResults.flat();
     issues.push(...evalIssues);
